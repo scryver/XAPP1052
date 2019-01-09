@@ -58,12 +58,13 @@
 #include <sys/ioctl.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <iostream>
 #include <fstream>
 
 #include "xbmd.h"                // Include XBMD driver header which defines SUCCESS(0) and FAILURE(-1)
 #include "MersenneTwister.h"     // Include random number generator header file.  Used for random mode
-#include "bmd.h" 
+#include "bmd.h"
 #include "cfg.h"                // Include class header file
 
 using namespace std;  // delte
@@ -76,7 +77,7 @@ bmd_t::bmd_t(void){
   this->rd_result_text = " ";      // Contains text stating success of RD DMA or error condition if one exists
   this->bmd_fatal_text = " ";      // Contains text stating error condition if BMD fails during setup of transfer
   this->wr_success = false;        // Bool declaring if Write DMA was successful
-  this->rd_success = false;        // Bool declaring if Read DMA was successful 
+  this->rd_success = false;        // Bool declaring if Read DMA was successful
 
 }
 
@@ -89,16 +90,16 @@ bmd_t::~bmd_t(void){
 //--- Arguments: Takes in the device file, user mode buffer containing data, and size to be transferred
 //--- Return Value: Returns INT stating SUCCESS or failure
 //--- Detailed Description: Using a standard IOCTL command, writes data to the kernel buffer allocated by driver
-int WriteData(int g_devFile, char* buff, int size) 
+int WriteData(int g_devFile, char* buff, size_t size)
 {
-  int ret = write(g_devFile, buff, size);                                                                       
+  int ret = write(g_devFile, buff, size);
   return (ret);
 }
 
 //--- ReadData(): Reads data from a kernel buffer
 //--- Arguments: Takes in the device file, user mode buffer containing data, and size to be transferred
 //--- Detailed Description: Using a standard IOCTL command, writes data to the kernel buffer allocated by driver
-int ReadData(int g_devFile, char* buff, int size)
+int ReadData(int g_devFile, char* buff, size_t size)
 {
   int ret = read(g_devFile, buff, size);
   return (ret);
@@ -114,11 +115,11 @@ struct TransferData  {
 //--- Arguments: Takes in a global struct containing XBMD descriptor register values used for setting up transfer
 //--- Detailed Description: This module does the following:
 //---                       1) Sets up and initializes any variables needed for transfer
-//---                       2) Writes the required XBMD descriptor registers and lastly, writes to XBMD control 
+//---                       2) Writes the required XBMD descriptor registers and lastly, writes to XBMD control
 //---                          register to start the transfer
-//---                       3) After DMA iteration, verifies data written from card into kernel buffer matches the 
+//---                       3) After DMA iteration, verifies data written from card into kernel buffer matches the
 //---                          pattern established for the transfer
-//---                       4) After DMA iteration, verifies that the control register reports that the Write DMA 
+//---                       4) After DMA iteration, verifies that the control register reports that the Write DMA
 //---                          engine has completed successfully
 //---                       5) After DMA iteration, verifies that the control register reports that the Read DMA
 //---                          engine has completed successfully
@@ -126,14 +127,14 @@ struct TransferData  {
 int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
 
   // Variable Declaration
-  
+
   //loop variables
   unsigned int jj;                          // Used for loops requiring buffer access
   unsigned int ll;                          // Used to build arrays containing valid packet sizes/link widths
 
-  int modulo4096 = 1;                       // used to help form modulo 4096 array  
+  int modulo4096 = 1;                       // used to help form modulo 4096 array
   unsigned int mode;                        // Random mode: variable which decides if transfer is >4096 or <4096 bytes
-  
+
   // BMD Register Variables
   unsigned int dmacr_reg_wr = 0x00000000;   // contains lower 16 bits of DMACR reg used to verify success WR DMA trans
   unsigned int dmacr_reg_rd = 0x00000000;   // contains lower 16 bits of DMACR reg used to verify success RD DMA trans
@@ -141,13 +142,13 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
 
   // Device CFG space variables
   unsigned int dcontrol_reg = 0x00000000;   // contains device control register contents used to verify MPS is valid
-	
+
   // Count, size, and pattern variables to
   int tlpsize[11];                          // Random mode: contains all valid TLP sizes for >4096 transfers
   int tlpsizemax = 0;                       // Random mode: index in tlpsize array to make sure payload isn't > MPS
   unsigned int mps = 32;                    // contains MPS for EP. Default to 32dwords (128bytes)
   unsigned int reg_value = 0;               // contains result of IOCTL reads to XBMD descriptor regs
-  unsigned int wrwdmatlpc=0;                // contains WR DMA TLP count 
+  unsigned int wrwdmatlpc=0;                // contains WR DMA TLP count
   unsigned int wrwdmatlps=0;                // contains WR DMA TLP payload size
   unsigned int wrwdmatlpp=0;                // contains WR DMA TLP pattern
   unsigned int wrrdmatlpc=0;                // contains RD DMA TLP count
@@ -158,42 +159,42 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
 
   unsigned int rd_phantom_en = 0;           // used to enable read phantom functions
 
-  // FILE IO - all status displayed to log file xbmd_log.txt which is then displayed to GUI upon completion of DMA 
+  // FILE IO - all status displayed to log file xbmd_log.txt which is then displayed to GUI upon completion of DMA
   ofstream file;
 
   // Random Number Variables.  Random numbers are used to generate DMA transfers with Random packet size, TLP count,
   // and TLP pattern.  Also randomized is whether the transfer is > 4096 bytes or < 4096 bytes.  It also randomizes
   // whether read phantom functions and transmit streaming are enabled.
   static MTRand *mtrandPtrRdsize = NULL;
-  static unsigned int seedRdsize = 1; 
+  static unsigned int seedRdsize = 1;
 
   static MTRand *mtrandPtrWrsize = NULL;
-  static unsigned int seedWrsize = 10; 
+  static unsigned int seedWrsize = 10;
 
   static MTRand *mtrandPtrRdcount = NULL;
-  static unsigned int seedRdcount = 1; 
+  static unsigned int seedRdcount = 1;
 
   static MTRand *mtrandPtrWrcount = NULL;
-  static unsigned int seedWrcount = 10; 
+  static unsigned int seedWrcount = 10;
 
   static MTRand *mtrandMode = NULL;
-  static unsigned int seedMode = 1; 
+  static unsigned int seedMode = 1;
 
   static MTRand *mtrandPattern = NULL;
-  static unsigned int seedPattern = 1; 
+  static unsigned int seedPattern = 1;
 
   static MTRand *mtrandWrPhantom = NULL;
-  static unsigned int seedWrPhantom = 1; 
+  static unsigned int seedWrPhantom = 1;
 
   static MTRand *mtrandRdPhantom = NULL;
-  static unsigned int seedRdPhantom = 1; 
+  static unsigned int seedRdPhantom = 1;
 
   static MTRand *mtrandTransStreaming = NULL;
-  static unsigned int seedTransStreaming = 1; 
+  static unsigned int seedTransStreaming = 1;
 
   // Setting seeds for all the random number generation variables
   seedPattern = 1;
-  seedMode=2; 
+  seedMode=2;
   seedRdsize=3;
   seedWrsize=4;
   seedRdcount=5;
@@ -201,8 +202,8 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   seedRdPhantom=7;
   seedWrPhantom=8;
   seedTransStreaming = 9;
-  
-  // Test variables 
+
+  // Test variables
   unsigned long testseed=time(NULL);
   file << "SEED VALUE : "<<testseed<<endl;
 
@@ -224,21 +225,21 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
     printf("Error opening log file");
     this->bmd_fatal_text = "Error Opening Log File: BMD.cpp";
     return CRIT_ERR;
-  } 
+  }
 
   // Allocate the user mode read data buffer
-  gReadData = (TransferData  *) malloc(sizeof(struct TransferData));	
+  gReadData = (TransferData  *) malloc(sizeof(struct TransferData));
   // Allocate the user mode write data buffer
-  gWriteData = (TransferData  *) malloc(sizeof(struct TransferData));	
+  gWriteData = (TransferData  *) malloc(sizeof(struct TransferData));
 
 
   // We read the EP device control register to identify the MPS set for this system.  The MPS is then used to get
   // and index into the Modulo4096 array.  This is needed to guarantee the XBMD does not generate packets that exceed
   // the max payload defined by the host upon configuration.  This is used in Random Mode.  The GUI currently restricts
-  // packet payloads to 128bytes which is what most chipsets on the market are limited to.    
+  // packet payloads to 128bytes which is what most chipsets on the market are limited to.
   reg_value = xbmd_descriptors.device_stat_cont_offset;
-  // To read EP configuration space or XBMD descriptor registers, we used pre-defined IOCTL calls (/sys/ioctl.h).  
-  // ioctl calls take in the device file number, register to be read, and returns the contents of that register.  
+  // To read EP configuration space or XBMD descriptor registers, we used pre-defined IOCTL calls (/sys/ioctl.h).
+  // ioctl calls take in the device file number, register to be read, and returns the contents of that register.
   // If ioctl call fails, we set the fatal text variable and return immediately.  GUI will show text in main status
   // bar
   if (ioctl(xbmd_descriptors.g_devFile, RDCFGREG, &reg_value) < 0) {
@@ -247,27 +248,27 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
     return CRIT_ERR;
   } else {
     dcontrol_reg = (reg_value & 0x000000E0) >> 5;   // mask off device MPS bits
-    mps = dcontrol_reg;   
+    mps = dcontrol_reg;
   }
-  // Sets up index into Modulo 4096 array		      
+  // Sets up index into Modulo 4096 array
   switch (dcontrol_reg) {
-			
+
     case 0: // 128 MPS
       tlpsizemax = 5;
       break;
     case 1:  // 256 MPS
-      tlpsizemax = 6; 
-      break;				
+      tlpsizemax = 6;
+      break;
     case 2:  // 512 MPS
       tlpsizemax = 7;
       break;
-    case 3:  // 1024 MPS 
+    case 3:  // 1024 MPS
       tlpsizemax = 8;
-      break;	 
-    case 4: // 2048 MPS  
+      break;
+    case 4: // 2048 MPS
       tlpsizemax = 9;
       break;
-    case 5: // 4096 MPS  
+    case 5: // 4096 MPS
       tlpsizemax = 10;
       break;
     default: {  //others - non valid MPS setting
@@ -277,9 +278,9 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
     }
   }
 
-  // Loop builds the tlpsize array which will holds all possible TLP SIZE values which are Modulo 4096 - 
+  // Loop builds the tlpsize array which will holds all possible TLP SIZE values which are Modulo 4096 -
   // We use payload sizes that are modulo4096 only when transferring > 4096 bytes.  This gaurantees we do not cross
-  // a page boundary in the middle of a TLP.  We use the tlpsizemax index to verify we are always within the MPS 
+  // a page boundary in the middle of a TLP.  We use the tlpsizemax index to verify we are always within the MPS
   // defined by the system
   // TLPSIZE = [1,2,4,8,16,32,64,128,256,512,1024,2048,4096]
   modulo4096 = 1;
@@ -290,8 +291,8 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
 
 
   // Use the current iteration count to identify if we exceed 10,000 cycles.  Change out logs at 10,000 or else contents
-  // become very large and risk issues loading into GUI.  Place the previous 10,000 iterations into log called 
-  // "prev_xbmd_log.txt."  At all times, not more than the previous 20,000 iterations can be viewed.  
+  // become very large and risk issues loading into GUI.  Place the previous 10,000 iterations into log called
+  // "prev_xbmd_log.txt."  At all times, not more than the previous 20,000 iterations can be viewed.
   // If a FILEIO error is seen, return and state issue in GUI main status bar.
   if (xbmd_descriptors.num_iter == 10000 ) {
     file.close();
@@ -308,18 +309,18 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
 
 
 
-  // The code below diverges into to main sections: Random Mode and Static Mode.  
+  // The code below diverges into to main sections: Random Mode and Static Mode.
   // Random Mode has two subsections: Transfers > 4096 bytes and Transfer < 4096 bytes
 
-  // RANDOM MODE:  
+  // RANDOM MODE:
   // All GUI inputs are disregarded and random DMA transfer settings are generated
-  // When running with transfers > 4096 bytes, all TLP sizes will be modulo4096 to ensure a page boundary isn't 
+  // When running with transfers > 4096 bytes, all TLP sizes will be modulo4096 to ensure a page boundary isn't
   // crossed in the middle of a TLP; a requirement by the spec.
 
   // When running with transfer < 4096 bytes, all TLP sizes are fair game since we guarantee a total transfer will not
-  // exceed a page boundary.  
+  // exceed a page boundary.
 
-  // STATIC MODE: 
+  // STATIC MODE:
   // When running in static mode, we take in the the GUI settings (TLP size, count, etc..).
   // All iterations in static mode are < 4096 bytes and is restricted by the GUI.
 
@@ -338,7 +339,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
     } else {
       dmisccont = 0x01010000;
     }
-    
+
     // If Phantom Functions are enabled, randomly decide whether this iteration will have it enabled. Write Phantom
     // functions not supported
     if (xbmd_descriptors.phantom_enable == true) {
@@ -349,29 +350,29 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
       rd_phantom_en = rd_phantom_en << 20;
       wrrdmatlps = (wrrdmatlps | rd_phantom_en);
     }
-    
-    // MODE = 0 implies that > 4096 transfer was selected.	
+
+    // MODE = 0 implies that > 4096 transfer was selected.
     if (mode == 0) {
-         
-      // Generate a randomly selected WR TLP size that is modulo4096 from the tlpsize array. Indexed by the tlpsizemax 
+
+      // Generate a randomly selected WR TLP size that is modulo4096 from the tlpsize array. Indexed by the tlpsizemax
       // variable
       wrwdmatlps = tlpsize[mtrandPtrWrsize->randInt(tlpsizemax)];
 
-      // Generate a random WR TLP count but verify that the total transfer does not exceed the total kernel buffer 
+      // Generate a random WR TLP count but verify that the total transfer does not exceed the total kernel buffer
       // allocated
       wrwdmatlpc = (65536/wrwdmatlps);
 
-      // Generate a randomly selected RD TLP size that is modulo4096 from the tlpsize array. Indexed by the tlpsizemax 
+      // Generate a randomly selected RD TLP size that is modulo4096 from the tlpsize array. Indexed by the tlpsizemax
       // variable
       wrrdmatlps = tlpsize[mtrandPtrRdsize->randInt(tlpsizemax)];
 
-      // Generate a random RD TLP count but verify that the total transfer does not exceed the total kernel buffer 
+      // Generate a random RD TLP count but verify that the total transfer does not exceed the total kernel buffer
       // allocated
       wrrdmatlpc = (65536/wrrdmatlps);
-    
+
     // MODE = 1 implies that < 4096 transfer was selected
     } else {
-        
+
       // Generate a randomly selected WR TLP size.  All TLP sizes are valid since we will not cross 4096 boundary
       wrwdmatlps = (1 + mtrandPtrWrsize->randInt(tlpsize[tlpsizemax]-1));
       wrwdmatlpc = (1024/wrwdmatlps);
@@ -387,7 +388,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
 
   // STATIC mode selected
   } else {
-    
+
     // Take in GUI settings
     wrwdmatlps = xbmd_descriptors.wr_tlp_size;                          // Write TLP size
     wrwdmatlpc = xbmd_descriptors.num_wr_tlps;                          // Write TLP count
@@ -397,10 +398,10 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
     wrwdmatlpp = strtoul(xbmd_descriptors.wr_pattern_new, NULL, 16);    // Read TLP pattern  - convert to int
   }
 
-  // Initalize the DMA target user mode buffer - Pattern data is data returned on read completions and must match 
+  // Initalize the DMA target user mode buffer - Pattern data is data returned on read completions and must match
   // WRRDMATLPP BMD descriptor register
   for (int jj = 0; jj < BUF_SIZE/4; jj++) {
-    gWriteData->data[jj]= wrrdmatlpp;  
+    gWriteData->data[jj]= wrrdmatlpp;
   }
 
   // Write buffer initialized above to kernel mode buffer so that pattern read from Kernel buffer matches the expected
@@ -408,19 +409,19 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   WriteData(xbmd_descriptors.g_devFile, (char*) gWriteData, BUF_SIZE);
 
   // -------------------------------------------------------------------------------------
-  //  SETTING UP XBMD DESCRIPTOR REGISTERS 
+  //  SETTING UP XBMD DESCRIPTOR REGISTERS
   // -------------------------------------------------------------------------------------
 
-  // The following IOCTL calls read and write the XBMD descriptor registers which set up the transfer.  When all 
+  // The following IOCTL calls read and write the XBMD descriptor registers which set up the transfer.  When all
   // registers are set up, we do one final write to the XBMD control register to kick of the Write and Read DMA engines
 
-  // Reset XBMD 
+  // Reset XBMD
   if (ioctl(xbmd_descriptors.g_devFile, INITRST, 0x00000000) < 0) {
     file << "INITRST Failed\n";
     this->bmd_fatal_text = "INITRST Failed: BMD.cpp";
     return CRIT_ERR;
   }
-	
+
   // Read XBMD Control Register
   if (ioctl(xbmd_descriptors.g_devFile, RDDDMACR, &dmacr_reg) < 0) {
     file << "DDMACR Read Failed\n";
@@ -432,7 +433,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
     file << "BMD Descriptor Registers: \nDMACR Value = " <<hex<< dmacr_reg<<"\n";
     #endif
   }
-	
+
   // Writes XBMD TLP count register indicating # of WRITE TLP's to send from card
   if (ioctl(xbmd_descriptors.g_devFile, WRWDMATLPC, wrwdmatlpc) < 0) {
     file << "WDMATLPC Write Failed\n";
@@ -441,7 +442,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
     return CRIT_ERR;
   }
 
-  // Writes TLP size register indicating payload of each WRITE TLP sent from card 
+  // Writes TLP size register indicating payload of each WRITE TLP sent from card
   if (ioctl(xbmd_descriptors.g_devFile, WRWDMATLPS, wrwdmatlps) < 0) {
     file << "WDMATLPS Write Failed\n";
     this->bmd_fatal_text = "WDMATLPS Write Failed: BMD.cpp";
@@ -465,16 +466,16 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
     return CRIT_ERR;
   }
 
-  // this IOCTL call sets the pattern for writes from BMD to system memory 
-  if (ioctl(xbmd_descriptors.g_devFile, WRWDMATLPP, wrwdmatlpp) < 0) {  
+  // this IOCTL call sets the pattern for writes from BMD to system memory
+  if (ioctl(xbmd_descriptors.g_devFile, WRWDMATLPP, wrwdmatlpp) < 0) {
     file << "RDMATLPP Write Failed\n";
     this->bmd_fatal_text = "RDMATLPP Write Failed: BMD.cpp";
     file.close();
     return CRIT_ERR;
   }
 
-  // this IOCTL call sets the pattern for writes from BMD to system memory 
-  if (ioctl(xbmd_descriptors.g_devFile, WRRDMATLPP, wrrdmatlpp) < 0) {    	
+  // this IOCTL call sets the pattern for writes from BMD to system memory
+  if (ioctl(xbmd_descriptors.g_devFile, WRRDMATLPP, wrrdmatlpp) < 0) {
     file << "RDMATLPP Write Failed\n";
     this->bmd_fatal_text = "RDMATLPP Write Failed: BMD.cpp";
     file.close();
@@ -487,7 +488,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
     this->bmd_fatal_text = "WDMATLPC Read Failed: BMD.cpp";
     file.close();
     return CRIT_ERR;
-  } else { 
+  } else {
     #ifdef Verbose
       file << "WDMATLPC Value = "<<hex<<reg_value<<"\n";
     #endif
@@ -504,7 +505,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
       file <<"WDMATLPS Value = "<<hex<<reg_value<<"\n";
     #endif
   }
-    
+
   // Reads RD_DMA TLP Count Register
   if (ioctl(xbmd_descriptors.g_devFile, RDRDMATLPC, &reg_value) < 0) {
     file << "RDMATLPC Read Failed\n";
@@ -516,7 +517,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
       file << "RDMATLPC Value = "<<hex<<reg_value<<"\n";
     #endif
   }
-    
+
   // Reads RD_DMA TLP SIZE REGISTER
   if (ioctl(xbmd_descriptors.g_devFile, RDRDMATLPS, &reg_value) < 0) {
     file << "RDMATLPS Read Failed\n";
@@ -560,7 +561,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
     file.close();
     return CRIT_ERR;
   }
- 
+
   // OR together the current dmacr_reg with WR_ENABLE and READ_ENABLE to kick off transfer.
   // WRITE_ENABLE AND READ_ENABLE are controlled by xbmd_main.cpp and will only be activated if user enables them
   dmacr_reg = dmacr_reg_rd | xbmd_descriptors.rd_enable | xbmd_descriptors.wr_enable;
@@ -571,19 +572,19 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
     file.close();
     return CRIT_ERR;
   }
-    
+
   // -------------------------------------------------------------------------------------
   //  WAIT FOR DMA ITERATION TO COMPLETE
-  // -------------------------------------------------------------------------------------    
-  usleep (30000); 	//This wait is required to make sure all data is transfered before checking integrity. 
- 
-	
+  // -------------------------------------------------------------------------------------
+  usleep (30000); 	//This wait is required to make sure all data is transfered before checking integrity.
+
+
   // -------------------------------------------------------------------------------------
   //  CHECK KERNEL BUFFER AND XBMD STATUS REGISTERS FOR ERRORS
-  // -------------------------------------------------------------------------------------   
+  // -------------------------------------------------------------------------------------
 
   // This for loop module zeroes out the data that was previously recorded in user mode buffer.  This is required
-  // in case the user keeps running with the same TLP pattern.  An error condition may be not be seen as the data 
+  // in case the user keeps running with the same TLP pattern.  An error condition may be not be seen as the data
   // read will match
   for (jj = 0; jj < BUF_SIZE/4; jj++) {
    gReadData->data[jj]= 0x00000000;
@@ -603,21 +604,21 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
     // mask off the read bits (upper 16) to check read DMA seperately
     dmacr_reg_rd = dmacr_reg & 0x11110000;
   }
-    
-  // Read data from Kernel Buffer to User Buffer...	
+
+  // Read data from Kernel Buffer to User Buffer...
   ReadData(xbmd_descriptors.g_devFile, (char *) gReadData, (wrwdmatlps * wrwdmatlpc * 4));
 
   // ----- WRITE ERROR CHECK -----//
-  if (xbmd_descriptors.wr_enable == 0x00000001)  { 
+  if (xbmd_descriptors.wr_enable == 0x00000001)  {
 
     // Now check to see if the data seen in user buffer matches the expected pattern.
     for (jj = 0; jj < (wrwdmatlps * wrwdmatlpc); jj++) {
-      if (gReadData->data[jj] != wrwdmatlpp) { 
+      if (gReadData->data[jj] != wrwdmatlpp) {
         // If a mismatch does occur, output the details to the log.
         file << "*** Write DMA Error (EP -> Chipset) ***\n Details: Data Error Found when comparing data written to kernel buffer with expected pattern: Write DMA \n TLP Size = " << wrwdmatlps << "\n TLP Count = "<< wrwdmatlpc << "\n";
 
         // State the mismatch found
-        file << hex<< gReadData->data[jj] << "(Data Buffer)" << " != "<< hex<< wrwdmatlpp << "(Expected)\n\n"; 
+        file << hex<< gReadData->data[jj] << "(Data Buffer)" << " != "<< hex<< wrwdmatlpp << "(Expected)\n\n";
 
         // close the log file
         file.close();
@@ -625,7 +626,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
         // set the result text stating a mismatch found
         this->wr_result_text = "ERROR: WR Mismatch with expected value";
 
-        // set the WR success variable to false.  Do not return because we need to check whether reads were successful. 
+        // set the WR success variable to false.  Do not return because we need to check whether reads were successful.
         // xbmd_main.cpp checks for success after each iteration and will not proceed
         this->wr_success=false;
         break;
@@ -634,8 +635,8 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
         this->wr_success=true;
       }
     }
-  
-    // if no mismatch is found, lets do a final check of DMACR_REG to make sure WR_DMA completed successfully   
+
+    // if no mismatch is found, lets do a final check of DMACR_REG to make sure WR_DMA completed successfully
     if (this->wr_success != false) {
       if (dmacr_reg_wr!= 0x00000101) {
         // if an error is found, output the control register contents to the log
@@ -647,7 +648,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
         // set the WR success variable to false
         this->wr_success=false;
       } else {
-        //if both checks fall through- consider a success  
+        //if both checks fall through- consider a success
         file << "WRITE DMA SUCCESS!"<<endl;
         this->wr_result_text = "WRITE DMA SUCCESS!";
         this->wr_success=true;
@@ -656,11 +657,11 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   }
 
   // ----- READ ERROR CHECK -----//
-  if (xbmd_descriptors.rd_enable == 0x00010000)  { 
-    // BMD responsible for error checking on read completions and recording to XBMD control register 
-    if (dmacr_reg_rd != 0x01010000) { 
+  if (xbmd_descriptors.rd_enable == 0x00010000)  {
+    // BMD responsible for error checking on read completions and recording to XBMD control register
+    if (dmacr_reg_rd != 0x01010000) {
       // If error is found, record XBMD control register to log
-      file << "*** Read DMA Error ***\n Details: Data Error Found by BMD backend and recorded in DDMACR register \n TLP Size = " << wrwdmatlps << "\n TLP Count = "<< wrwdmatlpc <<"\n";	
+      file << "*** Read DMA Error ***\n Details: Data Error Found by BMD backend and recorded in DDMACR register \n TLP Size = " << wrwdmatlps << "\n TLP Count = "<< wrwdmatlpc <<"\n";
       file << "DMACR register contents =32'h" << hex << dmacr_reg << "\n";
 
       // close out the log file
@@ -670,11 +671,11 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
       this->rd_result_text = "ERROR: DMACR !=0101xxxx";
 
       // set the RD success variable to false
-      this->rd_success=false;;    
+      this->rd_success=false;;
     } else {
       // Transfer is successful.  State in log file
       file << "READ DMA SUCCESS!"<<endl;
-     
+
       // update RD result text variable
       this->rd_result_text = "READ DMA SUCCESS!";
 
@@ -694,8 +695,8 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
     } else {
       // Mask off Fatal Error bit
       if (((reg_value & 0x00040000)>>16) == 0x00000004) {
-        //printf("CRITICAL ERROR REPORTED BY EP DEVICE"); 
-        this->bmd_fatal_text = "FATAL ERROR REPORTED BY EP DEVICE: BMD.cpp";	
+        //printf("CRITICAL ERROR REPORTED BY EP DEVICE");
+        this->bmd_fatal_text = "FATAL ERROR REPORTED BY EP DEVICE: BMD.cpp";
         file.close();
         return CRIT_ERR;
       }
@@ -706,7 +707,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   // -------------------------------------------------------------------------------------   ///
 
   // Performance is calculated by counting TRN clocks.
-  // The TRN clock frequency, which is the clock driving the XBMD, varies based on the link width and link speed.  To 
+  // The TRN clock frequency, which is the clock driving the XBMD, varies based on the link width and link speed.  To
   // correctly calculate performance, we must identify the link width and speed.
 
   int link_width_multiplier = 0;                 // Multiplier value calculated based on link width and speed
@@ -720,21 +721,21 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   switch (xbmd_descriptors.neg_link_speed) {
 
     //GEN1
-    case 1: {  
-      switch (xbmd_descriptors.neg_link_width) {		
+    case 1: {
+      switch (xbmd_descriptors.neg_link_width) {
         case 1: // x1
           link_width_multiplier = 31;
           break;
         case 2:  // x2
-          link_width_multiplier = 62; 
-          break;				
+          link_width_multiplier = 62;
+          break;
         case 4:  // x4
           link_width_multiplier = 125;
           break;
-        case 8:  // x8 
+        case 8:  // x8
           link_width_multiplier = 250;
-          break;			
-        default: {  //others - non-valid link width 
+          break;
+        default: {  //others - non-valid link width
           this->bmd_fatal_text = "Link Width is not valid: BMD.cpp";
 	  file.close();
           return CRIT_ERR;
@@ -745,21 +746,21 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
     }
 
     // GEN2
-    case 2: {  
-      switch (xbmd_descriptors.neg_link_width) {		
+    case 2: {
+      switch (xbmd_descriptors.neg_link_width) {
         case 1: // x1
           link_width_multiplier = 62;
           break;
         case 2:  // x2
-          link_width_multiplier = 125; 
-          break;				
+          link_width_multiplier = 125;
+          break;
         case 4:  // x4
           link_width_multiplier = 250;
           break;
-        case 8:  // x8 
+        case 8:  // x8
           link_width_multiplier = 500;
-          break;			
-        default: {  //others - non-valid link width 
+          break;
+        default: {  //others - non-valid link width
           this->bmd_fatal_text = "Link Width is not valid: BMD.cpp";
 	  file.close();
           return CRIT_ERR;
@@ -767,7 +768,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
       }
       break;
     }
-    default: {  //others - non-valid link width 
+    default: {  //others - non-valid link width
       this->bmd_fatal_text = "Link Speed is not valid: BMD.cpp";
       file.close();
       return CRIT_ERR;
@@ -778,7 +779,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   // returned by this point
   if (xbmd_descriptors.wr_enable == 0x00000001)  {
     if (ioctl(xbmd_descriptors.g_devFile, RDWDMAPERF, &trn_clks) < 0) {
-    
+
       // If error is found when reading RD performance register, update the fatal text and return with CRIT_ERR
       file << "RDMATLPP Read Failed\n";
       this->bmd_fatal_text = "RDMATLPP Read Failed: BMD.cpp";
@@ -842,12 +843,12 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
 //---                       1) Takes the rd_mbps, which is a tallied performance over all iterations and divides it
 //---                          by the iteration count to get total average Read performance
 //---                          register to start the transfer
-//---                       2) Returns the resulting average performance after converting it to char*.  We convert to 
+//---                       2) Returns the resulting average performance after converting it to char*.  We convert to
 //---                          char* because the argument to update the GUI text box takes a char*
 char* bmd_t::get_rd_mbps(int iter_count){
   sprintf(this->rd_mbps_c,"%d",(rd_mbps/iter_count));
   return this->rd_mbps_c;
-} 
+}
 
 //--- get_wr_mbps(): Returns the read performance as a char*
 //--- Arguments: Takes in iteration count
@@ -856,7 +857,7 @@ char* bmd_t::get_rd_mbps(int iter_count){
 //---                       1) Takes the wr_mbps, which is a tallied performance over all iterations and divides it
 //---                          by the iteration count to get total average Read performance
 //---                          register to start the transfer
-//---                       2) Returns the resulting average performance after converting it to char*.  We convert to 
+//---                       2) Returns the resulting average performance after converting it to char*.  We convert to
 //---                          char* because the argument to update the GUI text box takes a char*
 char* bmd_t::get_wr_mbps(int iter_count){
   sprintf(this->wr_mbps_c,"%d",(wr_mbps/iter_count));
@@ -911,7 +912,7 @@ const char* bmd_t::get_rd_result_text(void){
     int j = 0;
     unsigned int reg_value = 0;
 
-    // Open bmd_regs.txt.  If FILEIO occurs, print to log file the error and also update the main status bar. 
+    // Open bmd_regs.txt.  If FILEIO occurs, print to log file the error and also update the main status bar.
     //  then return CRIT_ERR
     bmd_file.open ("bmd_regs.txt");
     if (!bmd_file.is_open()) {
@@ -925,193 +926,193 @@ const char* bmd_t::get_rd_result_text(void){
     bmd_file <<endl<<"*** XBMD Register Values ***\n"<<endl;
     for (j = 0; j <20;j=j+1) {
       switch(j) {
-        case 0: 
+        case 0:
           reg_value = DCSR;
           if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
             bmd_file <<"DSCR Read failed"<< endl;
             return CRIT_ERR;
           } else {
-            bmd_file << "DCSR = 0x"<<hex<<reg_value<<endl; 	
+            bmd_file << "DCSR = 0x"<<hex<<reg_value<<endl;
           }
           break;
-       
-        case 1: 
+
+        case 1:
           reg_value = DMACR;
           if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
             bmd_file <<"DMACR Read failed"<< endl;
             return CRIT_ERR;
-          } else {	
-            bmd_file << "DMACR = 0x"<<hex<<reg_value<<endl; 		
+          } else {
+            bmd_file << "DMACR = 0x"<<hex<<reg_value<<endl;
           }
           break;
 
-        case 2: 
+        case 2:
           reg_value = WDMATLPA;
           if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
             bmd_file <<"WDMATLPA Read failed"<< endl;
             return CRIT_ERR;
           } else {
-            bmd_file << "WDMATLPA = 0x"<<hex<<reg_value<<endl; 	
+            bmd_file << "WDMATLPA = 0x"<<hex<<reg_value<<endl;
           }
           break;
 
-        case 3: 
+        case 3:
           reg_value = WDMATLPS;
           if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
             bmd_file <<"WDMATLPS Read failed"<< endl;
             return CRIT_ERR;
           } else {
-            bmd_file << "WDMATLPS = 0x"<<hex<<reg_value<<endl;  	
+            bmd_file << "WDMATLPS = 0x"<<hex<<reg_value<<endl;
           }
           break;
 
-        case 4: 
+        case 4:
           reg_value = WDMATLPC;
           if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
             bmd_file <<"WDMATLPC Read failed"<< endl;
             return CRIT_ERR;
           } else {
-            bmd_file << "WDMATLPC = 0x"<<hex<<reg_value<<endl; 	
+            bmd_file << "WDMATLPC = 0x"<<hex<<reg_value<<endl;
           }
           break;
 
-        case 5: 
+        case 5:
           reg_value = WDMATLPP;
           if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
             bmd_file <<"WDMATLPP Read failed"<< endl;
             return CRIT_ERR;
           } else {
-            bmd_file << "WDMATLPP = 0x"<<hex<<reg_value<<endl;  	
+            bmd_file << "WDMATLPP = 0x"<<hex<<reg_value<<endl;
           }
           break;
 
-        case 6: 
+        case 6:
           reg_value = RDMATLPP;
           if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
             bmd_file <<"RDMATLPP Read failed"<< endl;
             return CRIT_ERR;
           } else {
-            bmd_file << "RDMATLPP = 0x"<<hex<<reg_value<<endl;  	
+            bmd_file << "RDMATLPP = 0x"<<hex<<reg_value<<endl;
           }
           break;
 
-        case 7: 
+        case 7:
           reg_value = RDMATLPA;
           if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
             bmd_file <<"DMATLPA Read failed"<< endl;
             return CRIT_ERR;
           } else {
-            bmd_file << "RDMATLPA = 0x"<<hex<<reg_value<<endl;  	
+            bmd_file << "RDMATLPA = 0x"<<hex<<reg_value<<endl;
           }
           break;
 
-        case 8: 
+        case 8:
           reg_value = RDMATLPS;
           if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
             bmd_file <<"RDMATLPS Read failed"<< endl;
             return CRIT_ERR;
           } else {
-            bmd_file << "RDMATLPS = 0x"<<hex<<reg_value<<endl; 
+            bmd_file << "RDMATLPS = 0x"<<hex<<reg_value<<endl;
           }
           break;
 
-        case 9: 
+        case 9:
           reg_value = RDMATLPC;
           if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
             bmd_file <<"RDMATLPC Read failed"<< endl;
             return CRIT_ERR;
-          } else {; 	
-            bmd_file << "RDMATLPC = 0x"<<hex<<reg_value<<endl; 
+          } else {;
+            bmd_file << "RDMATLPC = 0x"<<hex<<reg_value<<endl;
           }
           break;
 
-        case 10: 
+        case 10:
           reg_value = WDMAPERF;
           if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
             bmd_file <<"WDMAPERF Read failed"<< endl;
             return CRIT_ERR;
-          } else { 	
-            bmd_file << "WDMAPERF = 0x"<<hex<<reg_value<<endl; 
+          } else {
+            bmd_file << "WDMAPERF = 0x"<<hex<<reg_value<<endl;
           }
           break;
 
-        case 11: 
+        case 11:
           reg_value = RDMAPERF;
           if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
             bmd_file <<"RDMAPERF Read failed"<< endl;
             return CRIT_ERR;
           } else {
-            bmd_file << "RDMAPERF = 0x"<<hex<<reg_value<<endl; 	
+            bmd_file << "RDMAPERF = 0x"<<hex<<reg_value<<endl;
           }
           break;
 
-        case 12: 
+        case 12:
           reg_value = RDMASTAT;
           if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
             bmd_file <<"RDMASTAT Read failed"<< endl;
             return CRIT_ERR;
           } else {
-            bmd_file << "RDMASTAT = 0x"<<hex<<reg_value<<endl;  	
+            bmd_file << "RDMASTAT = 0x"<<hex<<reg_value<<endl;
           }
           break;
 
-        case 13: 
+        case 13:
           reg_value = NRDCOMP;
           if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
             bmd_file <<"NRDCOMP Read failed"<< endl;
             return CRIT_ERR;
-          } else {; 	
-            bmd_file << "NRDCOMP = 0x"<<hex<<reg_value<<endl; 
+          } else {;
+            bmd_file << "NRDCOMP = 0x"<<hex<<reg_value<<endl;
           }
-          break;  
- 
-        case 14: 
+          break;
+
+        case 14:
           reg_value = RCOMPDSIZE;
           if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
             bmd_file <<"RCOMPDSIZE Read failed"<< endl;
             return CRIT_ERR;
           } else {
-            bmd_file << "RCOMPDSIZE = 0x"<<hex<<reg_value<<endl; 
+            bmd_file << "RCOMPDSIZE = 0x"<<hex<<reg_value<<endl;
           }
           break;
 
-        case 16: 
+        case 16:
           reg_value = DLWSTAT;
           if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
             bmd_file <<"DLWSTAT Read failed"<< endl;
             return CRIT_ERR;
-          } else {	
-            bmd_file << "DLWSTAT = 0x"<<hex<<reg_value<<endl; 
+          } else {
+            bmd_file << "DLWSTAT = 0x"<<hex<<reg_value<<endl;
           }
           break;
 
-        case 17: 
+        case 17:
           reg_value = DLTRSSTAT;
           if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
             bmd_file <<"DLTRSSTAT Read failed"<< endl;
             return CRIT_ERR;
-          } else {	
-            bmd_file << "DLTRSSTAT  = 0x"<<hex<<reg_value<<endl; 
+          } else {
+            bmd_file << "DLTRSSTAT  = 0x"<<hex<<reg_value<<endl;
           }
           break;
 
-        case 18: 
+        case 18:
           reg_value = DMISCCONT;
           if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
             bmd_file <<"DMISCCONT Read failed"<< endl;
             return CRIT_ERR;
-          } else {	
-            bmd_file << "DMISCCONT = 0x"<<hex<<reg_value<<endl; 
+          } else {
+            bmd_file << "DMISCCONT = 0x"<<hex<<reg_value<<endl;
           }
           break;
 
-        case 19: 
+        case 19:
           reg_value = DLNKC;
           if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
             bmd_file <<"DLNKC Read failed"<< endl;
             return CRIT_ERR;
           } else {
-            bmd_file << "DLNKC = 0x"<<hex<<reg_value<<endl; 	
+            bmd_file << "DLNKC = 0x"<<hex<<reg_value<<endl;
           }
           break;
        }
