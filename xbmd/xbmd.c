@@ -64,6 +64,7 @@
 
 #include <asm/uaccess.h>   /* copy_to_user */
 
+#include "xbmd_driver.h"
 #include "xbmd.h"
 
 // semaphores
@@ -123,17 +124,6 @@ typedef union RegWrite {
     };
 } RegWrite;
 
-// Struct Used for Writing CFG Register.  Holds value and register to be written
-typedef struct cfgwrite {
-	int reg;
-	int value;
-} cfgwr;
-
-// Struct Used for Writing BMD Register.  Holds value and register to be written
-typedef struct bmdwrite {
-	int reg;
-	int value;
-} bmdwr;
 //-----------------------------------------------------------------------------
 // Prototypes
 //-----------------------------------------------------------------------------
@@ -267,164 +257,135 @@ ssize_t XPCIe_Read(struct file *filp, char __user *buf, size_t count, loff_t *f_
 // Date      Who  Description
 //
 //---------------------------------------------------------------------------
-long XPCIe_Ioctl(struct file *filp,
-                 unsigned int cmd,
-                 unsigned long arg)
+#define IOCTL_READ_REQ(x)     { regx = XPCIe_ReadReg(x); ret = put_user(regx, (u32 *)arg); }
+#define IOCTL_WRITE_REG(x)    { XPCIe_WriteReg(x, arg); }
+long XPCIe_Ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
-
   u32 regx;
   int ret = SUCCESS;
 
   switch (cmd) {
-
-    case INITCARD:                    // Initailizes XBMD application
-      XPCIe_InitCard();
-      break;
-    case INITRST:                     // Resets XBMD applications
-      XPCIe_InitiatorReset();
-      break;
-    case DISPREGS:
-      break;
-    case RDDCSR:                     // Read: Device Control Status Register
-      regx = XPCIe_ReadReg(0);
-      return put_user(regx, (u32 *)arg);
-    case RDDDMACR:                   // Read: DMA Control Status Register
-      regx = XPCIe_ReadReg(1);
-      return put_user(regx, (u32 *)arg);
-    case RDWDMATLPA:                 // Read: Write DMA TLP Address Register
-      regx = XPCIe_ReadReg(2);
-      return put_user(regx, (u32 *)arg);
-    case RDWDMATLPS:                 // Read: Write DMA TLP Size Register
-      regx = XPCIe_ReadReg(3);
-      return put_user(regx, (u32 *)arg);
-    case RDWDMATLPC:                 // Read: Write DMA TLP Count Register
-      regx = XPCIe_ReadReg(4);
-      return put_user(regx, (u32 *)arg);
-    case RDWDMATLPP:                 // Read: Write DMA TLP Pattern Register
-      regx = XPCIe_ReadReg(5);
-      return put_user(regx, (u32 *)arg);
-    case RDRDMATLPP:                 // Read: Read DMA TLP Pattern Register
-      regx = XPCIe_ReadReg(6);
-      return put_user(regx, (u32 *)arg);
-    case RDRDMATLPA:                 // Read: Read DMA TLP Address Register
-      regx = XPCIe_ReadReg(7);
-      return put_user(regx, (u32 *)arg);
-    case RDRDMATLPS:                 // Read: Read DMA TLP Size Register
-      regx = XPCIe_ReadReg(8);
-      return put_user(regx, (u32 *)arg);
-    case RDRDMATLPC:                 // Read: Read DMA TLP Count Register
-      regx = XPCIe_ReadReg(9);
-      return put_user(regx, (u32 *)arg);
-    case RDWDMAPERF:                 // Read: Write DMA Performance Register
-      regx = XPCIe_ReadReg(10);
-      return put_user(regx, (u32 *)arg);
-    case RDRDMAPERF:                 // Read: Read DMA Performance Register
-      regx = XPCIe_ReadReg(11);
-      return put_user(regx, (u32 *)arg);
-    case RDRDMASTAT:                 // Read: Read DMA Status Register
-      regx = XPCIe_ReadReg(12);
-      return put_user(regx, (u32 *)arg);
-    case RDNRDCOMP:                  // Read: Number of Read Completion w/ Data Register
-      regx = XPCIe_ReadReg(13);
-      return put_user(regx, (u32 *)arg);
-    case RDRCOMPDSIZE:               // Read: Read Completion Size Register
-      regx = XPCIe_ReadReg(14);
-      return put_user(regx, (u32 *)arg);
-    case RDDLWSTAT:                  // Read: Device Link Width Status Register
-      regx = XPCIe_ReadReg(15);
-      return put_user(regx, (u32 *)arg);
-    case RDDLTRSSTAT:                // Read: Device Link Transaction Size Status Register
-      regx = XPCIe_ReadReg(16);
-      return put_user(regx, (u32 *)arg);
-    case RDDMISCCONT:                // Read: Device Miscellaneous Control Register
-      regx = XPCIe_ReadReg(17);
-      return put_user(regx, (u32 *)arg);
-    case RDDMISCONT:                // Read: Device MSI Control
-      regx = XPCIe_ReadReg(18);
-      return put_user(regx, (u32 *)arg);
-    case RDDLNKC:                   // Read: Device Directed Link Change Register
-      regx = XPCIe_ReadReg(19);
-      return put_user(regx, (u32 *)arg);
-    case DFCCTL:                    // Read: Device FC Control Register
-      regx = XPCIe_ReadReg(20);
-      return put_user(regx, (u32 *)arg);
-    case DFCPINFO:                  // Read: Device FC Posted Information
-      regx = XPCIe_ReadReg(21);
-      return put_user(regx, (u32 *)arg);
-    case DFCNPINFO:                 // Read: Device FC Non Posted Information
-      regx = XPCIe_ReadReg(22);
-      return put_user(regx, (u32 *)arg);
-    case DFCINFO:                  // Read: Device FC Completion Information
-      regx = XPCIe_ReadReg(23);
-      return put_user(regx, (u32 *)arg);
-    case WRDDMACR:                 // Write: DMA Control Status Register
-      XPCIe_WriteReg(1, arg);
-      break;
-    case WRWDMATLPS:               // Write: Write DMA TLP Size Register
-      XPCIe_WriteReg(3, arg);
-      break;
-    case WRWDMATLPC:               // Write: Write DMA TLP Count Register
-      XPCIe_WriteReg(4, arg);
-      break;
-    case WRWDMATLPP:               // Write: Write DMA TLP Pattern Register
-      XPCIe_WriteReg(5, arg);
-      break;
-    case WRRDMATLPS:               // Write: Read DMA TLP Size Register
-      XPCIe_WriteReg(8, arg);
-      break;
-    case WRRDMATLPC:               // Write: Read DMA TLP Count Register
-      XPCIe_WriteReg(9, arg);
-      break;
-    case WRRDMATLPP:               // Write: Read DMA TLP Pattern Register
-      XPCIe_WriteReg(6, arg);
-      break;
-    case WRDMISCCONT:              // Write: Device Miscellaneous Control Register
-      XPCIe_WriteReg(18, arg);
-      break;
-    case WRDDLNKC:                 // Write: Device Directed Link Change Register
-      XPCIe_WriteReg(19, arg);
-      break;
-    case RDBMDREG:                 // Read: Any XBMD Reg.  Added generic functionality so all register can be read
+        // Initailizes XBMD application
+        case XBMD_IOC_INITCARD:       { XPCIe_InitCard(); } break;
+        // Resets XBMD applications
+        case XBMD_IOC_RESET:          { XPCIe_InitiatorReset(); } break;
+        case XBMD_IOC_DISP_REGS:      {} break;
+        // Read: Device Control Status Register
+        case XBMD_IOC_READ_CTLR:      IOCTL_READ_REQ(Reg_DeviceCS) break;
+        // Read: DMA Control Status Register
+        case XBMD_IOC_READ_DMA_CTRL:  IOCTL_READ_REQ(Reg_DeviceDMACS) break;
+        // Read: Write DMA TLP Address Register
+        case XBMD_IOC_READ_WR_ADDR:   IOCTL_READ_REG(Reg_WriteTlpAddress) break;
+        // Read: Write DMA TLP Size Register
+        case XBMD_IOC_READ_WR_LEN:    IOCTL_READ_REG(Reg_WriteTlpSize) break;
+        // Read: Write DMA TLP Count Register
+        case XBMD_IOC_READ_WR_COUNT:  IOCTL_READ_REG(Reg_WriteTlpCount) break;
+        // Read: Write DMA TLP Pattern Register
+        case XBMD_IOC_READ_WR_PTRN:   IOCTL_READ_REG(Reg_WriteTlpPattern) break;
+        // Read: Read DMA TLP Pattern Register
+        case XBMD_IOC_READ_RD_PTRN:   IOCTL_READ_REG(Reg_ReadTlpPattern) break;
+        // Read: Read DMA TLP Address Register
+        case XBMD_IOC_READ_RD_ADDR:   IOCTL_READ_REG(Reg_ReadTlpAddress) break;
+        // Read: Read DMA TLP Size Register
+        case XBMD_IOC_READ_RD_LEN:    IOCTL_READ_REG(Reg_ReadTlpSize) break;
+        // Read: Read DMA TLP Count Register
+        case XBMD_IOC_READ_RD_COUNT:  IOCTL_READ_REG(Reg_ReadTlpCount) break;
+        // Read: Write DMA Performance Register
+        case XBMD_IOC_READ_WR_PERF:   IOCTL_READ_REG(Reg_WriteDMAPerf) break;
+        // Read: Read DMA Performance Register
+        case XBMD_IOC_READ_RD_PERF:   IOCTL_READ_REG(Reg_ReadDMAPerf) break;
+        // Read: Read DMA Status Register
+        case XBMD_IOC_READ_CMPL:      IOCTL_READ_REG(Reg_ReadComplStatus) break;
+        // Read: Number of Read Completion w/ Data Register
+        case XBMD_IOC_READ_CWDATA:    IOCTL_READ_REG(Reg_NrComplWithData) break;
+        // Read: Read Completion Size Register
+        case XBMD_IOC_READ_CSIZE:     IOCTL_READ_REG(Reg_ComplSize) break;
+        // Read: Device Link Width Status Register
+        case XBMD_IOC_READ_LINKWDTH:  IOCTL_READ_REG(Reg_DeviceLinkWidth) break;
+        // Read: Device Link Transaction Size Status Register
+        case XBMD_IOC_READ_LINKLEN:   IOCTL_READ_REG(Reg_DeviceLinkTransSize) break;
+        // Read: Device Miscellaneous Control Register
+        case XBMD_IOC_READ_MISC_CTL:  IOCTL_READ_REG(Reg_DeviceMiscControl) break;
+        // Read: Device MSI Control
+        case XBMD_IOC_READ_INTRPT:    IOCTL_READ_REG(Reg_DeviceMSIControl) break;
+        // Read: Device Directed Link Change Register
+        case XBMD_IOC_READ_DIR_LINK:  IOCTL_READ_REG(Reg_DeviceDirectedLinkChange) break;
+        // Read: Device FC Control Register
+        case XBMD_IOC_READ_FC_CTRL:   IOCTL_READ_REG(Reg_DeviceFCControl) break;
+        // Read: Device FC Posted Information
+        case XBMD_IOC_READ_FC_POST:   IOCTL_READ_REG(Reg_DeviceFCPostedInfo) break;
+        // Read: Device FC Non Posted Information
+        case XBMD_IOC_READ_FC_NPOST:  IOCTL_READ_REG(Reg_DeviceFCNonPostedInfo) break;
+        // Read: Device FC Completion Information
+        case XBMD_IOC_READ_FC_CMPL:   IOCTL_READ_REG(Reg_DeviceFCCompletionInfo) break;
+        
+        // Write: DMA Control Status Register
+        case XBMD_IOC_WRITE_DMA_CTRL: IOCTL_WRITE_REG(Reg_DeviceDMACS) break;
+        // Write: Write DMA TLP Size Register
+        case XBMD_IOC_WRITE_WR_LEN:   IOCTL_WRITE_REG(Reg_WriteTlpSize) break;
+        // Write: Write DMA TLP Count Register
+        case XBMD_IOC_WRITE_WR_COUNT: IOCTL_WRITE_REG(Reg_WriteTlpCount) break;
+        // Write: Write DMA TLP Pattern Register
+        case XBMD_IOC_WRITE_WR_PTRN:  IOCTL_WRITE_REG(Reg_WriteTlpPattern) break;
+        // Write: Read DMA TLP Size Register
+        case XBMD_IOC_WRITE_RD_LEN:   IOCTL_WRITE_REG(Reg_ReadTlpSize) break;
+        // Write: Read DMA TLP Count Register
+        case XBMD_IOC_WRITE_RD_COUNT: IOCTL_WRITE_REG(Reg_ReadTlpCount) break;
+        // Write: Read DMA TLP Pattern Register
+        case XBMD_IOC_WRITE_RD_PTRN:  IOCTL_WRITE_REG(Reg_ReadTlpPattern) break;
+        // Write: Device Miscellaneous Control Register
+        case XBMD_IOC_WRITE_MISC_CTL: IOCTL_WRITE_REG(Reg_DeviceMiscControl) break;
+        // Write: Device Directed Link Change Register
+        case XBMD_IOC_WRITE_DIR_LINK: IOCTL_WRITE_REG(Reg_DeviceDirectedLinkChange) break;
+        
+        // Read: Any XBMD Reg.  Added generic functionality so all register can be read
+    case XBMD_IOC_RD_BMD_REG: {
         if (get_user(regx, (u32 *)arg) < 0) {
-            return -EFAULT;
-        }
+            ret = -EFAULT;
+        } else {
         regx = XPCIe_ReadReg(regx);
-        return put_user(regx, (u32 *)arg);
-    case RDCFGREG:                 // Read: Any CFG Reg.  Added generic functionality so all register can be read
-        if (get_user(regx, (u32 *)arg) < 0) {
-            return -EFAULT;
-        }
-        regx = XPCIe_ReadCfgReg(regx);
-        return put_user(regx, (u32 *)arg);
-    case WRBMDREG:                 // Write: Any BMD Reg.  Added generic functionality so all register can be read
-        {
-            RegWrite bmdArg;
-            if (get_user(bmdArg.raw, (u64 *)arg) < 0) {
-                return -EFAULT;
+        ret = put_user(regx, (u32 *)arg);
             }
+        } break;
+        // Read: Any CFG Reg.  Added generic functionality so all register can be read
+    case XBMD_IOC_RD_CFG_REG: {
+        if (get_user(regx, (u32 *)arg) < 0) {
+             ret = -EFAULT;
+        } else {
+        regx = XPCIe_ReadCfgReg(regx);
+        ret = put_user(regx, (u32 *)arg);
+            }
+        } break;
+        // Write: Any BMD Reg.  Added generic functionality so all register can be read
+    case XBMD_IOC_WR_BMD_REG: {
+            RegWrite bmdArg = {0};
+            if (get_user(bmdArg.raw, (u64 *)arg) < 0) {
+                ret = -EFAULT;
+            } else {
       	    XPCIe_WriteReg(bmdArg.reg, bmdArg.value);
             printk(KERN_WARNING"%d: Write Register.\n", bmdArg.reg);
             printk(KERN_WARNING"%d: Write Value.\n", bmdArg.value);
-        }
-	    break;
-    case WRCFGREG:                 // Write: Any CFG Reg.  Added generic functionality so all register can be read
-        {
-            RegWrite cfgArg;
-            if (get_user(cfgArg.raw, (u64 *)arg) < 0) {
-                return -EFAULT;
             }
+        } break;
+        // Write: Any CFG Reg.  Added generic functionality so all register can be read
+    case XBMD_IOC_WR_CFG_REG: {
+            RegWrite cfgArg = {0};
+            if (get_user(cfgArg.raw, (u64 *)arg) < 0) {
+                ret = -EFAULT;
+            } else {
             XPCIe_WriteCfgReg(cfgArg.reg, cfgArg.value);
             printk(KERN_WARNING"%d: Write Register.\n", cfgArg.reg);
             printk(KERN_WARNING"%d: Write Value.\n", cfgArg.value);
-        }
-        break;
-    default:
-      break;
+            }
+        } break;
+        
+        default: {} break;
   }
 
   return ret;
 }
-
+#undef IOCTL_WRITE_REG
+#undef IOCTL_READ_REG
 
 // Aliasing write, read, ioctl, etc...
 struct file_operations XPCIe_Intf = {
@@ -584,8 +545,10 @@ XPCIe_probe(struct pci_dev *pci, const struct pci_device_id *pci_id)
 //--- Detailed Description: Writes a 1 to the DCSR register which resets the XBMD design
 void XPCIe_InitiatorReset()
 {
-  XPCIe_WriteReg(0, 1);                   // Write: DCSR (offset 0) with value of 1 (Reset Device)
-  XPCIe_WriteReg(0, 0);                   // Write: DCSR (offset 0) with value of 0 (Make Active)
+  XPCIe_WriteReg(Reg_DeviceCS, 1);
+    // Write: DCSR (offset 0) with value of 1 (Reset Device)
+    XPCIe_WriteReg(Reg_DeviceCS, 0);
+    // Write: DCSR (offset 0) with value of 0 (Make Active)
 }
 
 
@@ -596,19 +559,17 @@ void XPCIe_InitiatorReset()
 //---                       2) Writes specific values into the XBMD registers inside the EP
 void XPCIe_InitCard()
 {
+    XPCIe_InitiatorReset();
 
-  XPCIe_WriteReg(0, 1);                   // Write: DCSR (offset 0) with value of 1 (Reset Device)
-  XPCIe_WriteReg(0, 0);                   // Write: DCSR (offset 0) with value of 0 (Make Active)
+  XPCIe_WriteReg(Reg_WriteTlpAddress, gWriteHWAddr);        // Write: Write DMA TLP Address register with starting address
+  XPCIe_WriteReg(Reg_WriteTlpSize, 0x20);                // Write: Write DMA TLP Size register with default value (32dwords)
+  XPCIe_WriteReg(Reg_WriteTlpCount, 0x2000);              // Write: Write DMA TLP Count register with default value (2000)
+  XPCIe_WriteReg(Reg_WriteTlpPattern, 0x00000000);          // Write: Write DMA TLP Pattern register with default value (0x0)
 
-  XPCIe_WriteReg(2, gWriteHWAddr);        // Write: Write DMA TLP Address register with starting address
-  XPCIe_WriteReg(3, 0x20);                // Write: Write DMA TLP Size register with default value (32dwords)
-  XPCIe_WriteReg(4, 0x2000);              // Write: Write DMA TLP Count register with default value (2000)
-  XPCIe_WriteReg(5, 0x00000000);          // Write: Write DMA TLP Pattern register with default value (0x0)
-
-  XPCIe_WriteReg(6, 0xfeedbeef);          // Write: Read DMA Expected Data Pattern with default value (feedbeef)
-  XPCIe_WriteReg(7, gReadHWAddr);         // Write: Read DMA TLP Address register with starting address.
-  XPCIe_WriteReg(8, 0x20);                // Write: Read DMA TLP Size register with default value (32dwords)
-  XPCIe_WriteReg(9, 0x2000);              // Write: Read DMA TLP Count register with default value (2000)
+    XPCIe_WriteReg(Reg_ReadTlpPattern, 0xfeedbeef);          // Write: Read DMA Expected Data Pattern with default value (feedbeef)
+    XPCIe_WriteReg(Reg_ReadTlpAddress, gReadHWAddr);         // Write: Read DMA TLP Address register with starting address.
+  XPCIe_WriteReg(Reg_ReadTlpSize, 0x20);                // Write: Read DMA TLP Size register with default value (32dwords)
+  XPCIe_WriteReg(Reg_ReadTlpCount, 0x2000);              // Write: Read DMA TLP Count register with default value (2000)
 }
 
 //--- XPCIe_exit(): Performs any cleanup required before releasing the device
@@ -713,8 +674,6 @@ irqreturn_t XPCIe_IRQHandler(int irq, void *dev_id)
 u32 XPCIe_ReadReg (u32 dw_offset)
 {
         u32 ret = 0;
-        //u32 reg_addr = (u32)(gBaseVirt + (4 * dw_offset));
-        //ret = readl(reg_addr);
         ret = readl(gBaseVirt + (4 * dw_offset));
 
         return ret;
@@ -722,7 +681,6 @@ u32 XPCIe_ReadReg (u32 dw_offset)
 
 void XPCIe_WriteReg (u32 dw_offset, u32 val)
 {
-        //u32 reg_addr = (u32)(gBaseVirt + (4 * dw_offset));
         writel(val, (gBaseVirt + (4 * dw_offset)));
 }
 
@@ -733,7 +691,7 @@ int XPCIe_ReadMem(char *buf, size_t count)
     dma_addr_t dma_addr;
 
     //make sure passed in buffer is large enough
-    if ( count < BUF_SIZE )  {
+    if ( count < BUF_SIZE ) {
       printk("%s: XPCIe_Read: passed in buffer too small.\n", gDrvrName);
       ret = -1;
       goto exit;

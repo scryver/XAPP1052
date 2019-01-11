@@ -64,48 +64,48 @@
 
 enum {
 
-  INITCARD,
-  INITRST,
-  DISPREGS,
-  RDDCSR,
-  RDDDMACR,
-  RDWDMATLPA,
-  RDWDMATLPS,
-  RDWDMATLPC,
-  RDWDMATLPP,
-  RDRDMATLPP,
-  RDRDMATLPA,
-  RDRDMATLPS,
-  RDRDMATLPC,
-  RDWDMAPERF,
-  RDRDMAPERF,
-  RDRDMASTAT,
-  RDNRDCOMP,
-  RDRCOMPDSIZE,
-  RDDLWSTAT,
-  RDDLTRSSTAT,
-  RDDMISCCONT,
-  RDDMISCONT,
-  RDDLNKC,
-  DFCCTL,
-  DFCPINFO,
-  DFCNPINFO,
-  DFCINFO,
+  INITCARD,     // NOTE(michiel): Init dma control registers
+  INITRST,      // NOTE(michiel): Reset dma control
+  DISPREGS,     // NOTE(michiel): Unused
+  RDDCSR,       // NOTE(michiel): Read the Device Control Status Register
+    RDDDMACR,     // NOTE(michiel): Read the DMA Control Status Register
+    RDWDMATLPA,   // NOTE(michiel): Read the write DMA TLP Address
+  RDWDMATLPS,   // NOTE(michiel): Read the write DMA TLP Size
+  RDWDMATLPC,   // NOTE(michiel): Read the write DMA TLP Count
+  RDWDMATLPP,   // NOTE(michiel): Read the write DMA TLP Pattern
+  RDRDMATLPP,   // NOTE(michiel): Read the read DMA TLP Pattern
+  RDRDMATLPA,   // NOTE(michiel): Read the read DMA TLP Address
+  RDRDMATLPS,   // NOTE(michiel): Read the read DMA TLP Size
+  RDRDMATLPC,   // NOTE(michiel): Read the read DMA TLP Count
+  RDWDMAPERF,   // NOTE(michiel): Read the write DMA Performance
+  RDRDMAPERF,   // NOTE(michiel): Read the read DMA Performance
+  RDRDMASTAT,   // NOTE(michiel): Read the read DMA Status
+  RDNRDCOMP,    // NOTE(michiel): Read number of read completion with Data
+  RDRCOMPDSIZE, // NOTE(michiel): Read the read completion size
+  RDDLWSTAT,    // NOTE(michiel): Read device link width status
+  RDDLTRSSTAT,  // NOTE(michiel): Read device link transaction size status
+  RDDMISCCONT,  // NOTE(michiel): Read device miscellaneous control
+  RDDMISCONT,   // NOTE(michiel): Read device MSI control
+  RDDLNKC,      // NOTE(michiel): Read device directed link change
+  DFCCTL,       // NOTE(michiel): Read device flow control control
+  DFCPINFO,     // NOTE(michiel): Read device flow control posted info
+  DFCNPINFO,    // NOTE(michiel): Read device flow control non-posted info
+  DFCINFO,      // NOTE(michiel): Read device flow control completion info
 
-  RDCFGREG,
-  WRCFGREG,
-  RDBMDREG,
-  WRBMDREG,
+  RDCFGREG,     // NOTE(michiel): Read config register
+  WRCFGREG,     // NOTE(michiel): Write config register
+  RDBMDREG,     // NOTE(michiel): Read BMD register
+  WRBMDREG,     // NOTE(michiel): Write BMD register
 
-  WRDDMACR,
-  WRWDMATLPS,
-  WRWDMATLPC,
-  WRWDMATLPP,
-  WRRDMATLPS,
-  WRRDMATLPC,
-  WRRDMATLPP,
-  WRDMISCCONT,
-  WRDDLNKC,
+  WRDDMACR,     // NOTE(michiel): Write DMA control status register
+  WRWDMATLPS,   // NOTE(michiel): Write the write DMA TLP size
+  WRWDMATLPC,   // NOTE(michiel): Write the write DMA TLP count
+  WRWDMATLPP,   // NOTE(michiel): Write the write DMA TLP pattern
+  WRRDMATLPS,   // NOTE(michiel): Write the read DMA TLP size
+  WRRDMATLPC,   // NOTE(michiel): Write the read DMA TLP count
+  WRRDMATLPP,   // NOTE(michiel): Write the read DMA TLP pattern
+  WRDMISCCONT,  // NOTE(michiel): Write device miscellaneous control
+  WRDDLNKC,     // NOTE(michiel): Write device directed link change
 
   NUMCOMMANDS
 
