@@ -62,7 +62,7 @@ int read_cfg(int g_devFile)
    file << "Offset    Value\n"<<endl;
    for (i = 0; i <0x120;i=i+4) {
       reg_value = i;
-      if (ioctl(g_devFile, RDCFGREG, &reg_value) < 0) {
+      if (ioctl(g_devFile, XBMD_IOC_RD_CFG_REG, &reg_value) < 0) {
          printf("CFG Register 0x%x Read Failed\n",&reg_value);
          return CRIT_ERR;
       } else {

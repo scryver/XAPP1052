@@ -56,10 +56,11 @@
 #include <sys/ioctl.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <assert.h>
 #include <iostream>
 #include <iomanip>
 #include <fstream>
-#include "xbmd.h"
+#include "xbmd_user.h"
 #include "MersenneTwister.h"
 #include "cfg.h"
 
@@ -101,7 +102,7 @@ int cfg_t::cfg_read_regs(int g_devFile){
   // Read CFG space up to 120H
   for (ii = 0; ii <0x120;ii=ii+4) {
     reg_value = ii;
-    if (ioctl(g_devFile, RDCFGREG, &reg_value) < 0) {
+    if (ioctl(g_devFile, XBMD_IOC_RD_CFG_REG, &reg_value) < 0) {
 
       // If CFG read fails - state failure in file
       file << "ERROR: Could not read CFG Register 0x"<<ii<<". Verify device is present and driver loaded correctly"<<endl;
@@ -180,13 +181,14 @@ int cfg_t::cfg_read_regs(int g_devFile){
 //--- Return Value: Returns int FAILURE or SUCCESS for writes or register value for read.
 //--- Detailed Description: This module does the following:
 //---                       1) Reads or Writes a Endpoint Configuration register
-int cfg_t::cfg_rdwr_reg(int g_devFile,int reg, int reg_value, int wr_en){
+int cfg_t::cfg_rdwr_reg(int g_devFile, int reg, int reg_value, int wr_en){
   typedef struct cfgwrite {
     int reg;
     int value;
   } cfgwr;
     cfgwr configwr;
-
+    static_assert(sizeof(cfgwr) == sizeof(u64));
+    
   //assign the register to read solely in read case
   int read_reg = reg;
 
@@ -200,12 +202,12 @@ int cfg_t::cfg_rdwr_reg(int g_devFile,int reg, int reg_value, int wr_en){
     // Due to argument limitations with IOCTL, have to pass in a struct for writes which contains the write value
     // and also the write register offset.  Writing a configuration register may have adverse side affects and could
     // bring down the system so this operation must be used carefully.
-    if (ioctl(g_devFile, WRCFGREG, &configwr) < 0) {
+        if (ioctl(g_devFile, XBMD_IOC_WR_CFG_REG, (u64 *)&configwr) < 0) {
       return CRIT_ERR;
     } else {
 
        // Read EP Type 0 CFG Register and verify value written matches value read
-       if (ioctl(g_devFile, RDCFGREG, &read_reg) < 0) {
+       if (ioctl(g_devFile, XBMD_IOC_RD_CFG_REG, &read_reg) < 0) {
          // Read of EP CFG register failed. Return CRIT_ERR.
          return CRIT_ERR;
        } else if (read_reg != reg_value) {
@@ -220,7 +222,7 @@ int cfg_t::cfg_rdwr_reg(int g_devFile,int reg, int reg_value, int wr_en){
   // Read Configuration Register
   } else {
      // Read EP Type 0 CFG Register
-     if (ioctl(g_devFile, RDCFGREG, &read_reg) < 0) {
+     if (ioctl(g_devFile, XBMD_IOC_RD_CFG_REG, &read_reg) < 0) {
        // Read was not successful. Return CRIT_ERR
        return CRIT_ERR;
     } else {
@@ -247,7 +249,7 @@ int cfg_t::cfg_enable_functionality(int g_devFile, int dev_ctrl_phantom_func_en,
   // Read Device Control/Status Register First to get current value
   int reg = this->device_stat_cont_offset;
   int new_device_status_reg = 0;
-  if (ioctl(g_devFile, RDCFGREG, &reg) < 0) {
+  if (ioctl(g_devFile, XBMD_IOC_RD_CFG_REG, &reg) < 0) {
     // failure reading current contents of EP device control register
     return CRIT_ERR;
   } else {
@@ -259,13 +261,13 @@ int cfg_t::cfg_enable_functionality(int g_devFile, int dev_ctrl_phantom_func_en,
   // Now write Device Control Register with bits[19:16] = 0xF
   configwr.reg = this->device_stat_cont_offset;
   configwr.value = new_device_status_reg;
-  if (ioctl(g_devFile, WRCFGREG, &configwr) < 0) {
+    if (ioctl(g_devFile, XBMD_IOC_WR_CFG_REG, (u64 *)&configwr) < 0) {
     // Write of EP device control register failed. Return CRIT_ERR.
     return CRIT_ERR;
   } else {
     // Read EP device control register and verify value written matches value read
     reg = this->device_stat_cont_offset;
-    if (ioctl(g_devFile, RDCFGREG, &reg) < 0) {
+    if (ioctl(g_devFile, XBMD_IOC_RD_CFG_REG, &reg) < 0) {
       // Read of EP device control register failed. Return CRIT_ERR.
       return CRIT_ERR;
     } else if (configwr.value != reg) {
@@ -289,7 +291,7 @@ int cfg_t::cfg_update_regs(int g_devFile)
 
   // Getting device PM Capabilites
   reg_value = this->pm_offset;
-  if (ioctl(g_devFile, RDCFGREG, &reg_value) < 0) {
+  if (ioctl(g_devFile, XBMD_IOC_RD_CFG_REG, &reg_value) < 0) {
     this->cfg_fatal_text = "CFG Read Failed - update_regs";
     return CRIT_ERR;
   } else {
@@ -298,7 +300,7 @@ int cfg_t::cfg_update_regs(int g_devFile)
 
   // Getting device PM Status/Control
   reg_value = this->pm_offset+0x00000004;
-  if (ioctl(g_devFile, RDCFGREG, &reg_value) < 0) {
+  if (ioctl(g_devFile, XBMD_IOC_RD_CFG_REG, &reg_value) < 0) {
     this->cfg_fatal_text = "CFG Read Failed - update_regs";
     return CRIT_ERR;
   } else {
@@ -307,7 +309,7 @@ int cfg_t::cfg_update_regs(int g_devFile)
 
   // Getting device MSI Control
   reg_value = this->msi_offset;
-  if (ioctl(g_devFile, RDCFGREG, &reg_value) < 0) {
+    if (ioctl(g_devFile, XBMD_IOC_RD_CFG_REG, &reg_value) < 0) {
     this->cfg_fatal_text = "CFG Read Failed - update_regs";
     return CRIT_ERR;
   } else {
@@ -316,7 +318,7 @@ int cfg_t::cfg_update_regs(int g_devFile)
 
   // Getting device Link Width Capability
   reg_value = this->link_cap_offset;
-  if (ioctl(g_devFile, RDCFGREG, &reg_value) < 0) {
+    if (ioctl(g_devFile, XBMD_IOC_RD_CFG_REG, &reg_value) < 0) {
     this->cfg_fatal_text = "CFG Read Failed - update_regs";
     return CRIT_ERR;
   } else {
@@ -325,7 +327,7 @@ int cfg_t::cfg_update_regs(int g_devFile)
 
   // Getting device Link Speed Capability
   reg_value = this->link_cap_offset;
-  if (ioctl(g_devFile, RDCFGREG, &reg_value) < 0) {
+  if (ioctl(g_devFile, XBMD_IOC_RD_CFG_REG, &reg_value) < 0) {
     this->cfg_fatal_text = "CFG Read Failed - update_regs";
     return CRIT_ERR;
   } else {
@@ -334,7 +336,7 @@ int cfg_t::cfg_update_regs(int g_devFile)
 
   // Getting current device Link control
   reg_value = this->link_stat_cont_offset;
-  if (ioctl(g_devFile, RDCFGREG, &reg_value) < 0) {
+  if (ioctl(g_devFile, XBMD_IOC_RD_CFG_REG, &reg_value) < 0) {
     this->cfg_fatal_text = "CFG Read Failed - update_regs";
     return CRIT_ERR;
   } else {
@@ -343,7 +345,7 @@ int cfg_t::cfg_update_regs(int g_devFile)
 
   // Getting current device link width
   reg_value = this->link_stat_cont_offset;
-  if (ioctl(g_devFile, RDCFGREG, &reg_value) < 0) {
+  if (ioctl(g_devFile, XBMD_IOC_RD_CFG_REG, &reg_value) < 0) {
     this->cfg_fatal_text = "CFG Read Failed - update_regs";
     return CRIT_ERR;
   } else {
@@ -352,7 +354,7 @@ int cfg_t::cfg_update_regs(int g_devFile)
 
   // Getting current device Link Speed
   reg_value = this->link_stat_cont_offset;
-  if (ioctl(g_devFile, RDCFGREG, &reg_value) < 0) {
+  if (ioctl(g_devFile, XBMD_IOC_RD_CFG_REG, &reg_value) < 0) {
     this->cfg_fatal_text = "CFG Read Failed - update_regs";
     return CRIT_ERR;
   } else {
@@ -378,7 +380,7 @@ int cfg_t::cfg_get_capabilities(int g_devFile)
   int end_cap_struct  = 0;                  //Determines end of Linked List
 
   // Probe the Initial linked list pointer at 34H
-  if (ioctl(g_devFile, RDCFGREG, &next_cap_offset) < 0) {
+  if (ioctl(g_devFile, XBMD_IOC_RD_CFG_REG, &next_cap_offset) < 0) {
     this->cfg_fatal_text = "CFG Read Failed - get_capabilities";
     return CRIT_ERR;
   } else {
@@ -388,7 +390,7 @@ int cfg_t::cfg_get_capabilities(int g_devFile)
   // Traverse link list and identify capabilities until end of list
   while (end_cap_struct == 0) {
     curr_cap_offset = next_cap_offset;
-    if (ioctl(g_devFile, RDCFGREG, &next_cap_offset) < 0) {
+    if (ioctl(g_devFile, XBMD_IOC_RD_CFG_REG, &next_cap_offset) < 0) {
       this->cfg_fatal_text = "CFG Read Failed - get_capabilities";
       return CRIT_ERR;
     } else {

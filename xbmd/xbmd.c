@@ -62,9 +62,8 @@
 //#include <linux/pci-aspm.h>
 //#include <linux/pci_regs.h>
 
-#include <asm/uaccess.h>   /* copy_to_user */
+#include <linux/uaccess.h>   /* copy_to_user */
 
-#include "xbmd_driver.h"
 #include "xbmd.h"
 
 // semaphores
@@ -216,7 +215,7 @@ ssize_t XPCIe_Write(struct file *filp, const char __user *buf, size_t count,
 //
 // Description: This routine is invoked from user space to read data from
 //              the PCIe device. ***NOTE: This routine returns the entire
-//              buffer, (BUF_SIZE), count is ignored!. The user App must
+//              buffer, (DMA_BUF_SIZE), count is ignored!. The user App must
 //              do any needed processing on the buffer.
 //
 // Arguments: filp  : file pointer to opened device.
@@ -257,7 +256,7 @@ ssize_t XPCIe_Read(struct file *filp, char __user *buf, size_t count, loff_t *f_
 // Date      Who  Description
 //
 //---------------------------------------------------------------------------
-#define IOCTL_READ_REQ(x)     { regx = XPCIe_ReadReg(x); ret = put_user(regx, (u32 *)arg); }
+#define IOCTL_READ_REG(x)     { regx = XPCIe_ReadReg(x); ret = put_user(regx, (u32 *)arg); }
 #define IOCTL_WRITE_REG(x)    { XPCIe_WriteReg(x, arg); }
 long XPCIe_Ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
@@ -271,9 +270,9 @@ long XPCIe_Ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         case XBMD_IOC_RESET:          { XPCIe_InitiatorReset(); } break;
         case XBMD_IOC_DISP_REGS:      {} break;
         // Read: Device Control Status Register
-        case XBMD_IOC_READ_CTLR:      IOCTL_READ_REQ(Reg_DeviceCS) break;
+        case XBMD_IOC_READ_CTRL:      IOCTL_READ_REG(Reg_DeviceCS) break;
         // Read: DMA Control Status Register
-        case XBMD_IOC_READ_DMA_CTRL:  IOCTL_READ_REQ(Reg_DeviceDMACS) break;
+        case XBMD_IOC_READ_DMA_CTRL:  IOCTL_READ_REG(Reg_DeviceDMACS) break;
         // Read: Write DMA TLP Address Register
         case XBMD_IOC_READ_WR_ADDR:   IOCTL_READ_REG(Reg_WriteTlpAddress) break;
         // Read: Write DMA TLP Size Register
@@ -297,13 +296,13 @@ long XPCIe_Ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         // Read: Read DMA Status Register
         case XBMD_IOC_READ_CMPL:      IOCTL_READ_REG(Reg_ReadComplStatus) break;
         // Read: Number of Read Completion w/ Data Register
-        case XBMD_IOC_READ_CWDATA:    IOCTL_READ_REG(Reg_NrComplWithData) break;
+        case XBMD_IOC_READ_CWDATA:    IOCTL_READ_REG(Reg_ComplWithData) break;
         // Read: Read Completion Size Register
         case XBMD_IOC_READ_CSIZE:     IOCTL_READ_REG(Reg_ComplSize) break;
         // Read: Device Link Width Status Register
         case XBMD_IOC_READ_LINKWDTH:  IOCTL_READ_REG(Reg_DeviceLinkWidth) break;
         // Read: Device Link Transaction Size Status Register
-        case XBMD_IOC_READ_LINKLEN:   IOCTL_READ_REG(Reg_DeviceLinkTransSize) break;
+        case XBMD_IOC_READ_LINKLEN:   IOCTL_READ_REG(Reg_DeviceLinkTlpSize) break;
         // Read: Device Miscellaneous Control Register
         case XBMD_IOC_READ_MISC_CTL:  IOCTL_READ_REG(Reg_DeviceMiscControl) break;
         // Read: Device MSI Control
@@ -487,8 +486,8 @@ static int XPCIe_init(void)
 
   //--- START: Allocate Buffers
 
-  // Allocate the read buffer with size BUF_SIZE and return the starting address
-  gReadBuffer = pci_alloc_consistent(gDev, BUF_SIZE, &gReadHWAddr);
+  // Allocate the read buffer with size DMA_BUF_SIZE and return the starting address
+  gReadBuffer = pci_alloc_consistent(gDev, DMA_BUF_SIZE, &gReadHWAddr);
   if (NULL == gReadBuffer) {
     printk(KERN_CRIT"%s: Init: Unable to allocate gBuffer.\n",gDrvrName);
     return (CRIT_ERR);
@@ -496,8 +495,8 @@ static int XPCIe_init(void)
   // Print Read buffer size and address to kernel log
   printk(KERN_INFO"%s: Read Buffer Allocation: %lX->%X\n", gDrvrName, (unsigned long)gReadBuffer, (unsigned int)gReadHWAddr);
 
-  // Allocate the write buffer with size BUF_SIZE and return the starting address
-  gWriteBuffer = pci_alloc_consistent(gDev, BUF_SIZE, &gWriteHWAddr);
+  // Allocate the write buffer with size DMA_BUF_SIZE and return the starting address
+  gWriteBuffer = pci_alloc_consistent(gDev, DMA_BUF_SIZE, &gWriteHWAddr);
   if (NULL == gWriteBuffer) {
     printk(KERN_CRIT"%s: Init: Unable to allocate gBuffer.\n",gDrvrName);
     return (CRIT_ERR);
@@ -597,9 +596,9 @@ static void XPCIe_exit(void)
 
     // Free memory allocated to our Endpoint
     if (NULL != gReadBuffer)
-        pci_free_consistent(gDev, BUF_SIZE, gReadBuffer, gReadHWAddr);
+        pci_free_consistent(gDev, DMA_BUF_SIZE, gReadBuffer, gReadHWAddr);
     if (NULL != gWriteBuffer)
-        pci_free_consistent(gDev, BUF_SIZE, gWriteBuffer, gWriteHWAddr);
+        pci_free_consistent(gDev, DMA_BUF_SIZE, gWriteBuffer, gWriteHWAddr);
 
     gReadBuffer = NULL;
     gWriteBuffer = NULL;
@@ -691,7 +690,7 @@ int XPCIe_ReadMem(char *buf, size_t count)
     dma_addr_t dma_addr;
 
     //make sure passed in buffer is large enough
-    if ( count < BUF_SIZE ) {
+    if ( count < DMA_BUF_SIZE ) {
       printk("%s: XPCIe_Read: passed in buffer too small.\n", gDrvrName);
       ret = -1;
       goto exit;
@@ -702,7 +701,7 @@ int XPCIe_ReadMem(char *buf, size_t count)
     // pci_map_single return the physical address corresponding to
     // the virtual address passed to it as the 2nd parameter
 
-    dma_addr = pci_map_single(gDev, gReadBuffer, BUF_SIZE, PCI_DMA_FROMDEVICE);
+    dma_addr = pci_map_single(gDev, gReadBuffer, DMA_BUF_SIZE, PCI_DMA_FROMDEVICE);
     if ( 0 == dma_addr )  {
         printk("%s: XPCIe_Read: Map error.\n",gDrvrName);
         ret = -1;
@@ -719,12 +718,12 @@ int XPCIe_ReadMem(char *buf, size_t count)
             gDrvrName, (unsigned long)gReadBuffer, (unsigned int)dma_addr);
 
     // Unmap the DMA buffer so it is safe for normal access again.
-    pci_unmap_single(gDev, dma_addr, BUF_SIZE, PCI_DMA_FROMDEVICE);
+    pci_unmap_single(gDev, dma_addr, DMA_BUF_SIZE, PCI_DMA_FROMDEVICE);
 
     up(&gSem[SEM_DMA]);
 
     // Now it is safe to copy the data to user space.
-    if ( copy_to_user(buf, gReadBuffer, BUF_SIZE) )  {
+    if ( copy_to_user(buf, gReadBuffer, DMA_BUF_SIZE) )  {
         ret = -1;
         printk("%s: XPCIe_Read: Failed copy to user.\n",gDrvrName);
         goto exit;
@@ -756,7 +755,7 @@ ssize_t XPCIe_WriteMem(const char *buf, size_t count) {
     // pci_map_single return the physical address corresponding to
     // the virtual address passed to it as the 2nd parameter
 
-    dma_addr = pci_map_single(gDev, gWriteBuffer, BUF_SIZE, PCI_DMA_FROMDEVICE);
+    dma_addr = pci_map_single(gDev, gWriteBuffer, DMA_BUF_SIZE, PCI_DMA_FROMDEVICE);
     if ( 0 == dma_addr )  {
         printk("%s: XPCIe_Write: Map error.\n",gDrvrName);
         ret = -1;
@@ -773,7 +772,7 @@ ssize_t XPCIe_WriteMem(const char *buf, size_t count) {
            gDrvrName, (unsigned long)gReadBuffer, (unsigned int)dma_addr);
 
     // Unmap the DMA buffer so it is safe for normal access again.
-    pci_unmap_single(gDev, dma_addr, BUF_SIZE, PCI_DMA_FROMDEVICE);
+    pci_unmap_single(gDev, dma_addr, DMA_BUF_SIZE, PCI_DMA_FROMDEVICE);
 
     up(&gSem[SEM_DMA]);
 

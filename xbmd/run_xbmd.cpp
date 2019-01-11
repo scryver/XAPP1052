@@ -182,7 +182,7 @@ static unsigned int seedTransStreaming = 1;
       // Reading device control register to get maximum TLP paylod size (104D = 70H)
       reg_value = DEVICE_CONTROL_STAT_REG_OFFSET;
       cout << "DEVCONTROLREG = " <<hex<< reg_value << endl;
-      if (ioctl(g_devFile, RDCFGREG, &reg_value) < 0) {
+      if (ioctl(g_devFile, XBMD_IOC_RD_CFG_REG, &reg_value) < 0) {
          printf("Device Control Register 0x40 Read Failed\n");
          file << "Device Control Register 0x40 Read failed" << endl;
          return CRIT_ERR;
@@ -340,14 +340,14 @@ static unsigned int seedTransStreaming = 1;
    //////////////////////////////////////////////////////////////////////////////////////////
 
     // Reset Initiator Descriptor Registers
-    if (ioctl(g_devFile, INITRST, 0x00000000) < 0) {
-      	file << "INITRST Failed\n";
+    if (ioctl(g_devFile, XBMD_IOC_RESET, 0x00000000) < 0) {
+      	file << "Reset Failed\n";
       	return CRIT_ERR;
     }
 	
 	// Reads BMD control register
-    if (ioctl(g_devFile, RDDDMACR, &data) < 0) {
-      	file << "RDDDMACR Read Failed\n";
+    if (ioctl(g_devFile, XBMD_IOC_READ_DMA_CTRL, &data) < 0) {
+      	file << "DMA Control Read Failed\n";
 	return CRIT_ERR;
     }
     else {
@@ -357,50 +357,50 @@ static unsigned int seedTransStreaming = 1;
 	#endif
      }
 	// Writes BMD TLP count register indicating # of WRITE TLP's to send from card
-    if (ioctl(g_devFile, WRWDMATLPC, wrwdmatlpc) < 0) {
-     	file << "WRWDMATLPC Write Failed\n";
+    if (ioctl(g_devFile, XBMD_IOC_WRITE_WR_COUNT, wrwdmatlpc) < 0) {
+     	file << "TLP Write Count Write Failed\n";
 	file.close();
 	return CRIT_ERR;
     }
 
 	// Writes TLP size register indicating payload of each WRITE TLP sent from card 
-    if (ioctl(g_devFile, WRWDMATLPS, wrwdmatlps) < 0) {
-      	file << "WRWDMATLPS Write Failed\n";
+    if (ioctl(g_devFile, XBMD_IOC_WRITE_WR_LEN, wrwdmatlps) < 0) {
+        file << "TLP Write Length Write Failed\n";
 	file.close();
 	return CRIT_ERR;
     }
 
 	// Writes the TLP count indicating number of READ TLP's sent from card
-    if (ioctl(g_devFile, WRRDMATLPC, wrrdmatlpc) < 0) {
-      	file << "WRWDMATLPC Write Failed\n";
+    if (ioctl(g_devFile, XBMD_IOC_WRITE_RD_COUNT, wrrdmatlpc) < 0) {
+      	file << "TLP Read Count Write Failed\n";
 	file.close();
 	return CRIT_ERR;
     }
 
 	// Writes the TLP size register indicating requested payload seen in each READ TLP sent from card.
-    if (ioctl(g_devFile, WRRDMATLPS, wrrdmatlps) < 0) {
-      	file << "WRRDMATLPS Write Failed\n";
+    if (ioctl(g_devFile, XBMD_IOC_WRITE_RD_LEN, wrrdmatlps) < 0) {
+      	file << "TLP Read Length Write Failed\n";
 	file.close();
 	return CRIT_ERR;
     }
 
   	// this IOCTL call sets the pattern for writes from BMD to system memory and the checker module assumes it will check against this.
-    if (ioctl(g_devFile, WRWDMATLPP, wrwdmatlpp) < 0) {  //uncomment to get random data pattern
-      	file << "WRRDMATLPP Write Failed\n";
+    if (ioctl(g_devFile, XBMD_IOC_WRITE_WR_PTRN, wrwdmatlpp) < 0) {  //uncomment to get random data pattern
+      	file << "TLP Write Pattern Write Failed\n";
 	file.close();
 	return CRIT_ERR;
    }
 
   	// this IOCTL call sets the pattern for writes from BMD to system memory and the checker module assumes it will check against this.
-   if (ioctl(g_devFile, WRRDMATLPP, wrrdmatlpp) < 0) {    	
-	file << "WRRDMATLPP Write Failed\n";
+   if (ioctl(g_devFile, XBMD_IOC_WRITE_RD_PTRN, wrrdmatlpp) < 0) {    	
+	file << "TLP Read Pattern Write Failed\n";
 	file.close();
 	return CRIT_ERR;
    }
 
     // Reads WR_DMA TLP COUNT REGISTER
-    if (ioctl(g_devFile, RDWDMATLPC, &data) < 0) {
-      	file << "RDWDMATLPC Read Failed\n";
+    if (ioctl(g_devFile, XBMD_IOC_READ_WR_COUNT, &data) < 0) {
+      	file << "TLP Write Count Read Failed\n";
 	file.close();
 	return CRIT_ERR;
     }
@@ -411,7 +411,7 @@ static unsigned int seedTransStreaming = 1;
      }
 
     // Reads WR_DMA TLP SIZE REGISTER
-    if (ioctl(g_devFile, RDWDMATLPS, &data) < 0) {
+    if (ioctl(g_devFile, XBMD_IOC_READ_WR_LEN, &data) < 0) {
       	file << "RDWDMATLPS Read Failed\n";
 	file.close();
 	return CRIT_ERR;
@@ -423,7 +423,7 @@ static unsigned int seedTransStreaming = 1;
     }
     
     // Reads RD_DMA TLP Count Register
-    if (ioctl(g_devFile, RDRDMATLPC, &data) < 0) {
+    if (ioctl(g_devFile, XBMD_IOC_READ_RD_COUNT, &data) < 0) {
       	file << "RDRDMATLPC Read Failed\n";
 	file.close();
 	return CRIT_ERR;
@@ -434,7 +434,7 @@ static unsigned int seedTransStreaming = 1;
 	#endif
     }
     // Reads RD_DMA TLP SIZE REGISTER
-    if (ioctl(g_devFile, RDRDMATLPS, &data) < 0) {
+    if (ioctl(g_devFile, XBMD_IOC_READ_RD_LEN, &data) < 0) {
       	file << "RDRDMATLPS Read Failed\n";
 	file.close();
 	return CRIT_ERR;
@@ -446,7 +446,7 @@ static unsigned int seedTransStreaming = 1;
     }
 
     // Reads WR_DMA TLP PATTERN REGISTER
-    if (ioctl(g_devFile, RDWDMATLPP, &data) < 0) {
+    if (ioctl(g_devFile, XBMD_IOC_READ_WR_PTRN, &data) < 0) {
      	file << "RDWDMATLPP Read Failed\n";
 	file.close();
 	return CRIT_ERR;
@@ -459,7 +459,7 @@ static unsigned int seedTransStreaming = 1;
     }
 
     // Reads RD_DMA TLP PATTERN REGISTER
-    if (ioctl(g_devFile, RDRDMATLPP, &data) < 0) {
+    if (ioctl(g_devFile, XBMD_IOC_READ_RD_PTRN, &data) < 0) {
       	printf("RDRDMATLPP Read Failed\n");
 	file.close();
       	return CRIT_ERR;
@@ -472,7 +472,7 @@ static unsigned int seedTransStreaming = 1;
     }
 
     // WRR Control For Soft Core (no cpl streaming on) WRR 1:1
-    if (ioctl(g_devFile, WRDMISCCONT, dmisccont) < 0) {
+    if (ioctl(g_devFile, XBMD_IOC_WRITE_MISC_CTL, dmisccont) < 0) {
       	file << "WRDMISCCONT Write Failed\n";
 	file.close();
 	return CRIT_ERR;
@@ -481,7 +481,7 @@ static unsigned int seedTransStreaming = 1;
     // Initiator Start - Writes the Control Status Descriptor Register (DDMACR)
     dmacr_reg = dmacr_reg | rd_enable | wr_enable;
      cout << "DMACR = "<<dmacr_reg<<endl;
-    if (ioctl(g_devFile, WRDDMACR, dmacr_reg) < 0 ) {
+    if (ioctl(g_devFile, XBMD_IOC_WRITE_DMA_CTRL, dmacr_reg) < 0 ) {
       	file << "INITSTART Write Failed\n";
 	file.close();
   	file.close();
@@ -491,7 +491,7 @@ static unsigned int seedTransStreaming = 1;
      /////////////////////////////////////////////////////////////////////////////////////////////
     // ***** BMD DESCRIPTOR REGISTERS NOW SET UP...WAIT FOR TRANSFER BEFORE CHECING DATA ***** //
    /////////////////////////////////////////////////////////////////////////////////////////////    
-    usleep (6000); 	//This wait is required to make sure all data is transfered before checking integrity. 
+    usleep (6000);	//This wait is required to make sure all data is transfered before checking integrity. 
  
 	
       /////////////////////////////////////////////////////////////////////////////////
@@ -518,7 +518,7 @@ static unsigned int seedTransStreaming = 1;
    }
  
     // BMD responsible for error checking on read completions.  Records errors in DMACR Register which the module below reads
-    if (ioctl(g_devFile, RDDDMACR, &data) < 0) {
+    if (ioctl(g_devFile, XBMD_IOC_READ_DMA_CTRL, &data) < 0) {
       	file << "RDDDMACR Read Failed\n";
     }
     else {
@@ -534,7 +534,7 @@ static unsigned int seedTransStreaming = 1;
 
      // Checking Device Status for FATAL error and returning if one is seen.  Change value of 4 to check for other errors (Bit 0 = Correctable, BIt 1 = Non Fatal, Bit 3 = UR)
      reg_value = DEVICE_CONTROL_STAT_REG_OFFSET;
-     if (ioctl(g_devFile, RDCFGREG, &reg_value) < 0) {
+     if (ioctl(g_devFile, XBMD_IOC_RD_CFG_REG, &reg_value) < 0) {
         printf("Device Status Read Failed\n");
         file <<"Device Status Read failed"<<endl;
         return CRIT_ERR;
@@ -546,7 +546,6 @@ static unsigned int seedTransStreaming = 1;
         }
      }
   
-
   //cout << "\nXBMD_APP: All iterations completed.  Refer to 'log.txt' file for results\n";
   //file << "\n XBMD_APP: No errors found in test.\n";
 

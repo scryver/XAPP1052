@@ -62,7 +62,7 @@
 #include <fstream>
 #include <fcntl.h>
 
-#include "xbmd.h"              // Include XBMD driver header which defines SUCCESS(0) and FAILURE(-1)
+#include "xbmd_user.h"              // Include XBMD driver header which defines SUCCESS(0) and FAILURE(-1)
 #include "xbmd_main.h"         // Include main program header which defines
 #include "xbmd_ep.h"           // Include XBMD_EP class header. CFG and BMD classes included in XBMD_EP header
 

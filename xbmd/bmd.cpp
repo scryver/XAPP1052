@@ -62,8 +62,7 @@
 #include <iostream>
 #include <fstream>
 
-#include "xbmd_driver.h"
-#include "xbmd.h"                // Include XBMD driver header which defines SUCCESS(0) and FAILURE(-1)
+#include "xbmd_user.h" // Include XBMD driver header which defines SUCCESS(0) and CRIT_ERR(-1)
 #include "MersenneTwister.h"     // Include random number generator header file.  Used for random mode
 #include "bmd.h"
 #include "cfg.h"                // Include class header file
@@ -107,7 +106,7 @@ int ReadData(int g_devFile, char* buff, size_t size)
 }
 
 struct TransferData  {
-  unsigned int data[BUF_SIZE/4];
+  unsigned int data[DMA_BUF_SIZE/4];
 
 } *gReadData, *gWriteData;
 
@@ -243,7 +242,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   // ioctl calls take in the device file number, register to be read, and returns the contents of that register.
   // If ioctl call fails, we set the fatal text variable and return immediately.  GUI will show text in main status
   // bar
-  if (ioctl(xbmd_descriptors.g_devFile, RDCFGREG, &reg_value) < 0) {
+  if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_RD_CFG_REG, &reg_value) < 0) {
     this->bmd_fatal_text = "Error Reading Device Control Reg: BMD.cpp";
     file << "Device Control Register 0x40 Read failed" << endl;
     return CRIT_ERR;
@@ -401,13 +400,13 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
 
   // Initalize the DMA target user mode buffer - Pattern data is data returned on read completions and must match
   // WRRDMATLPP BMD descriptor register
-  for (int jj = 0; jj < BUF_SIZE/4; jj++) {
+  for (int jj = 0; jj < DMA_BUF_SIZE/4; jj++) {
     gWriteData->data[jj]= wrrdmatlpp;
   }
 
   // Write buffer initialized above to kernel mode buffer so that pattern read from Kernel buffer matches the expected
   // pattern checked by XBMD
-  WriteData(xbmd_descriptors.g_devFile, (char*) gWriteData, BUF_SIZE);
+  WriteData(xbmd_descriptors.g_devFile, (char*) gWriteData, DMA_BUF_SIZE);
 
   // -------------------------------------------------------------------------------------
   //  SETTING UP XBMD DESCRIPTOR REGISTERS
@@ -417,14 +416,14 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   // registers are set up, we do one final write to the XBMD control register to kick of the Write and Read DMA engines
 
   // Reset XBMD
-  if (ioctl(xbmd_descriptors.g_devFile, INITRST, 0x00000000) < 0) {
+  if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_RESET, 0x00000000) < 0) {
     file << "INITRST Failed\n";
     this->bmd_fatal_text = "INITRST Failed: BMD.cpp";
     return CRIT_ERR;
   }
 
   // Read XBMD Control Register
-  if (ioctl(xbmd_descriptors.g_devFile, RDDDMACR, &dmacr_reg) < 0) {
+    if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_READ_DMA_CTRL, &dmacr_reg) < 0) {
     file << "DDMACR Read Failed\n";
     this->bmd_fatal_text = "DDMACR Read Failed: BMD.cpp";
     file.close();
@@ -436,7 +435,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   }
 
   // Writes XBMD TLP count register indicating # of WRITE TLP's to send from card
-  if (ioctl(xbmd_descriptors.g_devFile, WRWDMATLPC, wrwdmatlpc) < 0) {
+  if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_WRITE_WR_COUNT, wrwdmatlpc) < 0) {
     file << "WDMATLPC Write Failed\n";
     this->bmd_fatal_text = "WDMATLPC Write Failed: BMD.cpp";
     file.close();
@@ -444,7 +443,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   }
 
   // Writes TLP size register indicating payload of each WRITE TLP sent from card
-  if (ioctl(xbmd_descriptors.g_devFile, WRWDMATLPS, wrwdmatlps) < 0) {
+  if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_WRITE_WR_LEN, wrwdmatlps) < 0) {
     file << "WDMATLPS Write Failed\n";
     this->bmd_fatal_text = "WDMATLPS Write Failed: BMD.cpp";
     file.close();
@@ -452,7 +451,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   }
 
   // Writes the TLP count indicating number of READ TLP's sent from card
-  if (ioctl(xbmd_descriptors.g_devFile, WRRDMATLPC, wrrdmatlpc) < 0) {
+    if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_WRITE_RD_COUNT, wrrdmatlpc) < 0) {
     file << "WDMATLPC Write Failed\n";
     this->bmd_fatal_text = "WDMATLPC Write Failed: BMD.cpp";
     file.close();
@@ -460,7 +459,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   }
 
   // Writes the TLP size register indicating requested payload seen in each READ TLP sent from card.
-  if (ioctl(xbmd_descriptors.g_devFile, WRRDMATLPS, wrrdmatlps) < 0) {
+    if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_WRITE_RD_LEN, wrrdmatlps) < 0) {
     file << "RDMATLPS Write Failed\n";
     this->bmd_fatal_text = "RDMATLPS Write Failed: BMD.cpp";
     file.close();
@@ -468,7 +467,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   }
 
   // this IOCTL call sets the pattern for writes from BMD to system memory
-  if (ioctl(xbmd_descriptors.g_devFile, WRWDMATLPP, wrwdmatlpp) < 0) {
+    if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_WRITE_WR_PTRN, wrwdmatlpp) < 0) {
     file << "RDMATLPP Write Failed\n";
     this->bmd_fatal_text = "RDMATLPP Write Failed: BMD.cpp";
     file.close();
@@ -476,7 +475,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   }
 
   // this IOCTL call sets the pattern for writes from BMD to system memory
-  if (ioctl(xbmd_descriptors.g_devFile, WRRDMATLPP, wrrdmatlpp) < 0) {
+    if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_WRITE_RD_PTRN, wrrdmatlpp) < 0) {
     file << "RDMATLPP Write Failed\n";
     this->bmd_fatal_text = "RDMATLPP Write Failed: BMD.cpp";
     file.close();
@@ -484,7 +483,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   }
 
   // Reads WR_DMA TLP COUNT REGISTER
-  if (ioctl(xbmd_descriptors.g_devFile, RDWDMATLPC, &reg_value) < 0) {
+    if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_READ_WR_COUNT, &reg_value) < 0) {
     file << "WDMATLPC Read Failed\n";
     this->bmd_fatal_text = "WDMATLPC Read Failed: BMD.cpp";
     file.close();
@@ -496,7 +495,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   }
 
   // Reads WR_DMA TLP SIZE REGISTER
-  if (ioctl(xbmd_descriptors.g_devFile, RDWDMATLPS, &reg_value) < 0) {
+    if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_READ_WR_LEN, &reg_value) < 0) {
     file << "WDMATLPS Read Failed\n";
     this->bmd_fatal_text = "WDMATLPS Read Failed: BMD.cpp";
     file.close();
@@ -508,7 +507,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   }
 
   // Reads RD_DMA TLP Count Register
-  if (ioctl(xbmd_descriptors.g_devFile, RDRDMATLPC, &reg_value) < 0) {
+    if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_READ_RD_COUNT, &reg_value) < 0) {
     file << "RDMATLPC Read Failed\n";
     this->bmd_fatal_text = "RDMATLPC Read Failed: BMD.cpp";
     file.close();
@@ -520,7 +519,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   }
 
   // Reads RD_DMA TLP SIZE REGISTER
-  if (ioctl(xbmd_descriptors.g_devFile, RDRDMATLPS, &reg_value) < 0) {
+    if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_READ_RD_LEN, &reg_value) < 0) {
     file << "RDMATLPS Read Failed\n";
     this->bmd_fatal_text = "RDMATLPS Read Failed: BMD.cpp";
     file.close();
@@ -532,7 +531,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   }
 
   // Reads WR_DMA TLP PATTERN REGISTER
-  if (ioctl(xbmd_descriptors.g_devFile, RDWDMATLPP, &reg_value) < 0) {
+    if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_READ_WR_PTRN, &reg_value) < 0) {
     file << "WDMATLPP Read Failed\n";
     this->bmd_fatal_text = "WDMATLPP Read Failed: BMD.cpp";
     file.close();
@@ -544,7 +543,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   }
 
   // Reads RD_DMA TLP PATTERN REGISTER
-  if (ioctl(xbmd_descriptors.g_devFile, RDRDMATLPP, &reg_value) < 0) {
+    if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_READ_RD_PTRN, &reg_value) < 0) {
     file << "RDMATLPP Read Failed\n";
     this->bmd_fatal_text = "RDMATLPP Read Failed: BMD.cpp";
     file.close();
@@ -556,7 +555,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   }
 
   // WRR Control For Soft Core (no cpl streaming on) WRR 1:1
-  if (ioctl(xbmd_descriptors.g_devFile, WRDMISCCONT, dmisccont) < 0) {
+    if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_WRITE_MISC_CTL, dmisccont) < 0) {
     file << "DMISCCONT Write Failed\n";
     this->bmd_fatal_text = "DMISCCONT Write Failed: BMD.cpp";
     file.close();
@@ -567,7 +566,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   // WRITE_ENABLE AND READ_ENABLE are controlled by xbmd_main.cpp and will only be activated if user enables them
   dmacr_reg = dmacr_reg_rd | xbmd_descriptors.rd_enable | xbmd_descriptors.wr_enable;
   // Initiator Start - Writes the Control Status Descriptor Register (DDMACR)
-  if (ioctl(xbmd_descriptors.g_devFile, WRDDMACR, dmacr_reg) < 0 ) {
+  if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_WRITE_DMA_CTRL, dmacr_reg) < 0 ) {
     file << "DMACR Write Failed\n";
     this->bmd_fatal_text = "DMACR Write Failed: BMD.cpp";
     file.close();
@@ -587,13 +586,13 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   // This for loop module zeroes out the data that was previously recorded in user mode buffer.  This is required
   // in case the user keeps running with the same TLP pattern.  An error condition may be not be seen as the data
   // read will match
-  for (jj = 0; jj < BUF_SIZE/4; jj++) {
+  for (jj = 0; jj < DMA_BUF_SIZE/4; jj++) {
    gReadData->data[jj]= 0x00000000;
   }
 
   // Read the XBMD control register which will state whether XBMD encountered an error condition during transfer.
   // If error occurs on read, update fatal_text and return to GUI which will show error in main status bar
-  if (ioctl(xbmd_descriptors.g_devFile, RDDDMACR, &reg_value) < 0) {
+  if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_READ_DMA_CTRL, &reg_value) < 0) {
     file << "DMACR Read Failed\n";
     this->bmd_fatal_text = "DMACR Read Failed: BMD.cpp";
     file.close();
@@ -688,7 +687,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
      // Checking Device Status for FATAL error and returning if one is seen.  Only checking for Fatal condition (Bit 2)
      // Change value of 4 to check for other errors (Bit 0 = Correctable, Bit 1 = Non Fatal, Bit 3 = UR)
     reg_value = xbmd_descriptors.device_stat_cont_offset;
-    if (ioctl(xbmd_descriptors.g_devFile, RDCFGREG, &reg_value) < 0) {
+    if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_RD_CFG_REG, &reg_value) < 0) {
       file <<"Device Status Read failed"<<endl;
       this->bmd_fatal_text = "Device Status Read failed: BMD.cpp";
       file.close();
@@ -779,7 +778,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   // Only update performance if Write DMA is enabled.  Won't be calculated on error condition as we will have already
   // returned by this point
   if (xbmd_descriptors.wr_enable == 0x00000001)  {
-    if (ioctl(xbmd_descriptors.g_devFile, RDWDMAPERF, &trn_clks) < 0) {
+    if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_READ_WR_PERF, &trn_clks) < 0) {
 
       // If error is found when reading RD performance register, update the fatal text and return with CRIT_ERR
       file << "RDMATLPP Read Failed\n";
@@ -801,7 +800,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   // Only update performance if Read DMA is enabled.  Won't be calculated on error condition
   if (xbmd_descriptors.rd_enable == 0x00010000)  {
     // Reads WR_DMA PERFORMANCE REGISTER
-    if (ioctl(xbmd_descriptors.g_devFile, RDRDMAPERF, &trn_clks) < 0) {
+        if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_READ_RD_PERF, &trn_clks) < 0) {
 
       // If error is found when reading RD performance register, update the fatal text and return with CRIT_ERR
       file << "RDMATLPP Read Failed\n";
@@ -901,6 +900,48 @@ const char* bmd_t::get_rd_result_text(void){
   return this->rd_result_text;
 }
 
+struct RegValueRead
+{
+    XbmDmaControlReg reg;
+    const char *name;
+};
+static RegValueRead gRegReads[] = {
+    {Reg_DeviceCS, "Device Control Status"},
+    {Reg_DeviceDMACS, "DMA Control Status"},
+    {Reg_WriteTlpAddress, "Write Tlp Address"},
+    {Reg_WriteTlpSize, "Write Tlp Size"},
+    {Reg_WriteTlpCount, "Write Tlp Count"},
+    {Reg_WriteTlpPattern, "Write Tlp Pattern"},
+    {Reg_ReadTlpPattern, "Read Tlp Pattern"},
+    {Reg_ReadTlpAddress, "Read Tlp Address"},
+    {Reg_ReadTlpSize, "Read Tlp Size"},
+    {Reg_ReadTlpCount, "Read Tlp Count"},
+    {Reg_WriteDMAPerf, "Write DMA Perf"},
+    {Reg_ReadDMAPerf, "Read DMA Perf"},
+    {Reg_ReadComplStatus, "Read Completion Status"},
+    {Reg_ComplWithData, "Completion With Data"},
+    {Reg_ComplSize, "Completion Size"},
+    {Reg_DeviceLinkWidth, "Device Link Width"},
+    {Reg_DeviceLinkTlpSize, "Device Link Tlp Size"},
+    {Reg_DeviceMiscControl, "Device Misc Control"},
+    {Reg_DeviceMSIControl, "Device MSI Control"},
+    {Reg_DeviceDirectedLinkChange, "Device Directed Link Change"},
+    {Reg_DeviceFCControl, "Device FC Control"},
+    {Reg_DeviceFCPostedInfo, "Device FC Posted Info"},
+    {Reg_DeviceFCNonPostedInfo, "Device FC Non-Posted Info"},
+    {Reg_DeviceFCCompletionInfo, "Device FC Completion Info"},
+};
+
+#define DO_READ_REG(i) { \
+    RegValueRead reader = gRegReads[i]; \
+      unsigned int reg_value = reader.reg; \
+        if (ioctl(g_devFile, XBMD_IOC_RD_BMD_REG, &reg_value) < 0) { \
+        bmd_file << reader.name << " read failed" << endl; \
+        return CRIT_ERR; \
+    } else { \
+            bmd_file << reader.name << " = 0x" << hex << reg_value << endl; \
+    } \
+}
 
 //--- read_bmd_regs(): Reads XBMD regs and outputs to bmd_regs.txt file
 //--- Arguments:  int device file number
@@ -910,8 +951,6 @@ const char* bmd_t::get_rd_result_text(void){
 //---                          so that it can be displayed in the GUI under the Read_BMD tab
   int bmd_t::read_bmd_regs(int g_devFile) {
     ofstream bmd_file;
-    int j = 0;
-    unsigned int reg_value = 0;
 
     // Open bmd_regs.txt.  If FILEIO occurs, print to log file the error and also update the main status bar.
     //  then return CRIT_ERR
@@ -925,201 +964,30 @@ const char* bmd_t::get_rd_result_text(void){
     // Switch statement reads XBMD descriptor register values sequentially and outputs to log file.  We use a switch
     // statement so we can give actual descriptor register names rather than solely offsets from base.
     bmd_file <<endl<<"*** XBMD Register Values ***\n"<<endl;
-    for (j = 0; j <20;j=j+1) {
-      switch(j) {
-        case 0:
-          reg_value = DCSR;
-          if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
-            bmd_file <<"DSCR Read failed"<< endl;
-            return CRIT_ERR;
-          } else {
-            bmd_file << "DCSR = 0x"<<hex<<reg_value<<endl;
-          }
-          break;
-
-        case 1:
-          reg_value = DMACR;
-          if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
-            bmd_file <<"DMACR Read failed"<< endl;
-            return CRIT_ERR;
-          } else {
-            bmd_file << "DMACR = 0x"<<hex<<reg_value<<endl;
-          }
-          break;
-
-        case 2:
-          reg_value = WDMATLPA;
-          if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
-            bmd_file <<"WDMATLPA Read failed"<< endl;
-            return CRIT_ERR;
-          } else {
-            bmd_file << "WDMATLPA = 0x"<<hex<<reg_value<<endl;
-          }
-          break;
-
-        case 3:
-          reg_value = WDMATLPS;
-          if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
-            bmd_file <<"WDMATLPS Read failed"<< endl;
-            return CRIT_ERR;
-          } else {
-            bmd_file << "WDMATLPS = 0x"<<hex<<reg_value<<endl;
-          }
-          break;
-
-        case 4:
-          reg_value = WDMATLPC;
-          if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
-            bmd_file <<"WDMATLPC Read failed"<< endl;
-            return CRIT_ERR;
-          } else {
-            bmd_file << "WDMATLPC = 0x"<<hex<<reg_value<<endl;
-          }
-          break;
-
-        case 5:
-          reg_value = WDMATLPP;
-          if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
-            bmd_file <<"WDMATLPP Read failed"<< endl;
-            return CRIT_ERR;
-          } else {
-            bmd_file << "WDMATLPP = 0x"<<hex<<reg_value<<endl;
-          }
-          break;
-
-        case 6:
-          reg_value = RDMATLPP;
-          if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
-            bmd_file <<"RDMATLPP Read failed"<< endl;
-            return CRIT_ERR;
-          } else {
-            bmd_file << "RDMATLPP = 0x"<<hex<<reg_value<<endl;
-          }
-          break;
-
-        case 7:
-          reg_value = RDMATLPA;
-          if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
-            bmd_file <<"DMATLPA Read failed"<< endl;
-            return CRIT_ERR;
-          } else {
-            bmd_file << "RDMATLPA = 0x"<<hex<<reg_value<<endl;
-          }
-          break;
-
-        case 8:
-          reg_value = RDMATLPS;
-          if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
-            bmd_file <<"RDMATLPS Read failed"<< endl;
-            return CRIT_ERR;
-          } else {
-            bmd_file << "RDMATLPS = 0x"<<hex<<reg_value<<endl;
-          }
-          break;
-
-        case 9:
-          reg_value = RDMATLPC;
-          if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
-            bmd_file <<"RDMATLPC Read failed"<< endl;
-            return CRIT_ERR;
-          } else {;
-            bmd_file << "RDMATLPC = 0x"<<hex<<reg_value<<endl;
-          }
-          break;
-
-        case 10:
-          reg_value = WDMAPERF;
-          if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
-            bmd_file <<"WDMAPERF Read failed"<< endl;
-            return CRIT_ERR;
-          } else {
-            bmd_file << "WDMAPERF = 0x"<<hex<<reg_value<<endl;
-          }
-          break;
-
-        case 11:
-          reg_value = RDMAPERF;
-          if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
-            bmd_file <<"RDMAPERF Read failed"<< endl;
-            return CRIT_ERR;
-          } else {
-            bmd_file << "RDMAPERF = 0x"<<hex<<reg_value<<endl;
-          }
-          break;
-
-        case 12:
-          reg_value = RDMASTAT;
-          if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
-            bmd_file <<"RDMASTAT Read failed"<< endl;
-            return CRIT_ERR;
-          } else {
-            bmd_file << "RDMASTAT = 0x"<<hex<<reg_value<<endl;
-          }
-          break;
-
-        case 13:
-          reg_value = NRDCOMP;
-          if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
-            bmd_file <<"NRDCOMP Read failed"<< endl;
-            return CRIT_ERR;
-          } else {;
-            bmd_file << "NRDCOMP = 0x"<<hex<<reg_value<<endl;
-          }
-          break;
-
-        case 14:
-          reg_value = RCOMPDSIZE;
-          if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
-            bmd_file <<"RCOMPDSIZE Read failed"<< endl;
-            return CRIT_ERR;
-          } else {
-            bmd_file << "RCOMPDSIZE = 0x"<<hex<<reg_value<<endl;
-          }
-          break;
-
-        case 16:
-          reg_value = DLWSTAT;
-          if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
-            bmd_file <<"DLWSTAT Read failed"<< endl;
-            return CRIT_ERR;
-          } else {
-            bmd_file << "DLWSTAT = 0x"<<hex<<reg_value<<endl;
-          }
-          break;
-
-        case 17:
-          reg_value = DLTRSSTAT;
-          if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
-            bmd_file <<"DLTRSSTAT Read failed"<< endl;
-            return CRIT_ERR;
-          } else {
-            bmd_file << "DLTRSSTAT  = 0x"<<hex<<reg_value<<endl;
-          }
-          break;
-
-        case 18:
-          reg_value = DMISCCONT;
-          if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
-            bmd_file <<"DMISCCONT Read failed"<< endl;
-            return CRIT_ERR;
-          } else {
-            bmd_file << "DMISCCONT = 0x"<<hex<<reg_value<<endl;
-          }
-          break;
-
-        case 19:
-          reg_value = DLNKC;
-          if (ioctl(g_devFile, RDBMDREG, &reg_value) < 0) {
-            bmd_file <<"DLNKC Read failed"<< endl;
-            return CRIT_ERR;
-          } else {
-            bmd_file << "DLNKC = 0x"<<hex<<reg_value<<endl;
-          }
-          break;
-       }
-    }
+    DO_READ_REG(0);
+    DO_READ_REG(1);
+    DO_READ_REG(2);
+    DO_READ_REG(3);
+    DO_READ_REG(4);
+    DO_READ_REG(5);
+    DO_READ_REG(6);
+    DO_READ_REG(7);
+    DO_READ_REG(8);
+    DO_READ_REG(9);
+    DO_READ_REG(10);
+    DO_READ_REG(11);
+    DO_READ_REG(12);
+    DO_READ_REG(13);
+    DO_READ_REG(14);
+    DO_READ_REG(15);
+    DO_READ_REG(16);
+    DO_READ_REG(17);
+    DO_READ_REG(18);
+    DO_READ_REG(19);
     bmd_file <<"*** End XBMD Register Space ***\n"<<endl;
     bmd_file.close();
     return SUCCESS;
   }
+
+#undef DO_READ_REG
 
