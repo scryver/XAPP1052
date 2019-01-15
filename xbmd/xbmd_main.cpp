@@ -58,15 +58,22 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <assert.h>
+#include <unistd.h>
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <fcntl.h>
 
 #include "xbmd_user.h"              // Include XBMD driver header which defines SUCCESS(0) and FAILURE(-1)
 #include "xbmd_main.h"         // Include main program header which defines
 #include "xbmd_ep.h"           // Include XBMD_EP class header. CFG and BMD classes included in XBMD_EP header
+#include "MersenneTwister.h"     // Include random number generator header file.  Used for random mode
 
 using namespace std; // delete
+
+#include "cfg.cpp"
+#include "bmd.cpp"
 
 // Location of UI XML file relative to path in which program is running.
 // XML file contains GUI specifics for each widget (XY coordinates, visual height, size, etc...)

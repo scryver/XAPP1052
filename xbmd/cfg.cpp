@@ -53,18 +53,6 @@
 //       error reporting, etc..)
 //    4) Reading/Writing Endpoint configuration space (currently unused)
 //---------------------------------------------------------------------------------------------------------------
-#include <sys/ioctl.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <assert.h>
-#include <iostream>
-#include <iomanip>
-#include <fstream>
-#include "xbmd_user.h"
-#include "MersenneTwister.h"
-#include "cfg.h"
-
-using namespace std;
 
   // Constructor and destructor prototypes
   cfg_t::cfg_t(void){

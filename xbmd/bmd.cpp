@@ -54,21 +54,6 @@
 //    5) Reading and returning XBMD descriptor registers so contents can be view in GUI
 //---------------------------------------------------------------------------------------------------------------
 
-// Include standard C++ libraries
-#include <sys/ioctl.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <iostream>
-#include <fstream>
-
-#include "xbmd_user.h" // Include XBMD driver header which defines SUCCESS(0) and CRIT_ERR(-1)
-#include "MersenneTwister.h"     // Include random number generator header file.  Used for random mode
-#include "bmd.h"
-#include "cfg.h"                // Include class header file
-
-using namespace std;  // delte
-
 //member functions
 bmd_t::bmd_t(void){
   this->rd_mbps_c = new char[1];   // Char string showing performance that is passed to GUI RD MBPS field
@@ -591,7 +576,7 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
   }
 
   // Read the XBMD control register which will state whether XBMD encountered an error condition during transfer.
-  // If error occurs on read, update fatal_text and return to GUI which will show error in main status bar
+  // If error occurs on read, update fatal_text and return to GUI which will show error in ma in status bar
   if (ioctl(xbmd_descriptors.g_devFile, XBMD_IOC_READ_DMA_CTRL, &reg_value) < 0) {
     file << "DMACR Read Failed\n";
     this->bmd_fatal_text = "DMACR Read Failed: BMD.cpp";

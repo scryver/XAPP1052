@@ -52,13 +52,9 @@
 #include "bmd.h"
 #include "cfg.h"
 
-//*** XBMD_EP Class ***//
-class xbmd_ep_t {
-public:
+//*** XBMD_EP ***//
+ struct xbmd_ep_t 
+{
   bmd_t bmd;
   cfg_t cfg;
-
-  /* Member Functions */
-   xbmd_ep_t(void);
-   ~xbmd_ep_t(void);
 };
