@@ -6,5 +6,5 @@ chown root /dev/xbmd
 chmod 0644 /dev/xbmd
 ls -al /dev/xbmd
 
-./load_driver
+./kernel/load_driver
 
