@@ -128,6 +128,7 @@ typedef union RegWrite {
 //-----------------------------------------------------------------------------
 
 irqreturn_t XPCIe_IRQHandler (int irq, void *dev_id);
+irqreturn_t XPCIe_IRQMSIHandler(int irq, void *dev_id);
 u32   XPCIe_ReadReg (u32 dw_offset);
 void  XPCIe_WriteReg (u32 dw_offset, u32 val);
 void  XPCIe_InitCard (void);
@@ -462,25 +463,42 @@ static int XPCIe_init(void)
   gStatFlags = gStatFlags | HAVE_REGION;
 
   printk(KERN_INFO"%s: Init: Initialize Hardware Done..\n",gDrvrName);
-
+    
+    // Bus Master Enable
+    if (0 > pci_enable_device(gDev)) {
+        printk(KERN_WARNING"%s: Init: Device not enabled.\n", gDrvrName);
+        return (CRIT_ERR);
+    }
+    pci_set_master(gDev);
+    
   // Request IRQ from OS.
   // In past architectures, the SHARED and SAMPLE_RANDOM flags were called: SA_SHIRQ and SA_SAMPLE_RANDOM
   // respectively.  In older Fedora core installations, the request arguments may need to be reverted back.
   // SA_SHIRQ | SA_SAMPLE_RANDOM
-  printk(KERN_INFO"%s: ISR Setup..\n", gDrvrName);
+    printk(KERN_INFO"%s: ISR Setup..\n", gDrvrName);
+  #if 0
   if (0 > request_irq(gIrq, XPCIe_IRQHandler, IRQF_SHARED, gDrvrName, gDev)) {
     printk(KERN_WARNING"%s: Init: Unable to allocate IRQ",gDrvrName);
     return (CRIT_ERR);
   }
+    #else
+    if (pci_alloc_irq_vectors(gDev, 8, 8, PCI_IRQ_MSI) != 8) {
+        printk(KERN_WARNING"%s: Init: Unable to allocate all MSI IRQs", gDrvrName);
+        return CRIT_ERR;
+    }
+    
+    gIrq = pci_irq_vector(gDev, 0);
+    if (0 > gIrq) {
+        printk(KERN_WARNING"%s: Init: Unable to find IRQ vector", gDrvrName);
+        return CRIT_ERR;
+    }
+    if (0 > request_irq(gIrq, XPCIe_IRQMSIHandler, 0, gDrvrName, gDev)) {
+        printk(KERN_WARNING"%s: Init: Unable to allocate IRQ", gDrvrName);
+        return (CRIT_ERR);
+    }
+    #endif
   // Update flags stating IRQ was successfully obtained
   gStatFlags = gStatFlags | HAVE_IRQ;
-
-  // Bus Master Enable
-  if (0 > pci_enable_device(gDev)) {
-    printk(KERN_WARNING"%s: Init: Device not enabled.\n", gDrvrName);
-    return (CRIT_ERR);
-  }
-    pci_set_master(gDev);
 
   //--- END: Initialize Hardware
 
@@ -656,6 +674,32 @@ module_pci_driver(XPCIe_drive);
 
 irqreturn_t XPCIe_IRQHandler(int irq, void *dev_id)
 {
+    u32 i, regx, msiReg;
+    
+     msiReg = XPCIe_ReadReg(Reg_DeviceMSIControl);
+    if (msiReg & 0x80000000) {
+        // NOTE(michiel): Our interrupt
+    printk(KERN_WARNING"%s: Interrupt Handler Start ..",gDrvrName);
+    
+    for (i = 0; i < 32; i++) {
+        regx = XPCIe_ReadReg(i);
+        printk(KERN_WARNING"%s: REG<%d> : 0x%X\n", gDrvrName, i, regx);
+    }
+        
+        XPCIe_WriteReg(Reg_DeviceMSIControl, 0x100 | (msiReg & 0xFF));
+        XPCIe_ReadReg(Reg_DeviceMSIControl);
+        XPCIe_WriteReg(Reg_DeviceMSIControl, (msiReg & 0xFF));
+    
+    printk(KERN_WARNING"%s: Interrupt Handler End ..\n", gDrvrName);
+    
+        return IRQ_HANDLED;
+    } else {
+        return IRQ_NONE;
+    }
+}
+
+irqreturn_t XPCIe_IRQMSIHandler(int irq, void *dev_id)
+{
     u32 i, regx;
 
     printk(KERN_WARNING"%s: Interrupt Handler Start ..",gDrvrName);
@@ -665,7 +709,7 @@ irqreturn_t XPCIe_IRQHandler(int irq, void *dev_id)
         printk(KERN_WARNING"%s : REG<%d> : 0x%X\n", gDrvrName, i, regx);
     }
 
-    printk(KERN_WARNING"%s Interrupt Handler End ..\n", gDrvrName);
+    printk(KERN_WARNING"%s: Interrupt Handler End ..\n", gDrvrName);
 
     return IRQ_HANDLED;
 }
