@@ -59,6 +59,7 @@
 #include <linux/pci.h>
 #include <linux/interrupt.h>
 #include <linux/fs.h>
+#include <linux/cdev.h>
 //#include <linux/pci-aspm.h>
 //#include <linux/pci_regs.h>
 
@@ -101,19 +102,27 @@ MODULE_LICENSE("Dual BSD/GPL");
 #define HAVE_IRQ    0x02                    // Interupt
 #define HAVE_KREG   0x04                    // Kernel registration
 
+typedef struct xbmd_device
+{
+    const char *name;
+    
+unsigned long baseAddr;
+    unsigned long baseLength;
+    void __iomem *baseVirtual;
+    
+    struct pci_dev *pciDev;
+    int             irq;
+    
+    dma_addr_t    readAddr;
+    u8           *readBuffer;
+    dma_addr_t    writeAddr;
+    u8           *writeBuffer;
+    
+    struct cdev   chrDev;
+    } xbmd_device;
+
 int             gDrvrMajor = 241;           // Major number not dynamic.
-unsigned int    gStatFlags = 0x00;          // Status flags used for cleanup.
-unsigned long   gBaseHdwr;                  // Base register address (Hardware address)
-unsigned long   gBaseLen;                   // Base register address Length
-void           *gBaseVirt = NULL;           // Base register address (Virtual address, for I/O).
-char            gDrvrName[]= "xbmd";        // Name of driver in proc.
-struct pci_dev *gDev = NULL;                // PCI device structure.
-int             gIrq = -1;                  // IRQ assigned by PCI system.
-char           *gBufferUnaligned = NULL;    // Pointer to Unaligned DMA buffer.
-char           *gReadBuffer      = NULL;    // Pointer to dword aligned DMA buffer.
-char           *gWriteBuffer     = NULL;    // Pointer to dword aligned DMA buffer.
-dma_addr_t      gReadHWAddr;
-dma_addr_t      gWriteHWAddr;
+int             gDrvrMinor = 0;
 
 typedef union RegWrite {
     u64 raw;
@@ -127,14 +136,14 @@ typedef union RegWrite {
 // Prototypes
 //-----------------------------------------------------------------------------
 
-irqreturn_t XPCIe_IRQHandler (int irq, void *dev_id);
+irqreturn_t XPCIe_IRQHandler(int irq, void *dev_id);
 irqreturn_t XPCIe_IRQMSIHandler(int irq, void *dev_id);
-u32   XPCIe_ReadReg (u32 dw_offset);
-void  XPCIe_WriteReg (u32 dw_offset, u32 val);
-void  XPCIe_InitCard (void);
-void  XPCIe_InitiatorReset (void);
-u32 XPCIe_ReadCfgReg (u32 byte);
-u32 XPCIe_WriteCfgReg (u32 byte, u32 value);
+u32   XPCIe_ReadReg (xbmd_device *dev, u32 dw_offset);
+void  XPCIe_WriteReg (xbmd_device *dev, u32 dw_offset, u32 val);
+void  XPCIe_InitCard (xbmd_device *dev);
+void  XPCIe_InitiatorReset (xbmd_device *dev);
+u32 XPCIe_ReadCfgReg (xbmd_device *dev, u32 byte);
+u32 XPCIe_WriteCfgReg (xbmd_device *dev, u32 byte, u32 value);
 
 //---------------------------------------------------------------------------
 // Name:        XPCIe_Open
@@ -152,7 +161,20 @@ u32 XPCIe_WriteCfgReg (u32 byte, u32 value);
 //---------------------------------------------------------------------------
 int XPCIe_Open(struct inode *inode, struct file *filp)
 {
-  printk(KERN_INFO"%s: Open: module opened\n",gDrvrName);
+    xbmd_device *dev = container_of(inode->i_cdev, xbmd_device, chrDev);
+    filp->private_data = dev;
+    
+    if (!dev) {
+        printk(KERN_WARNING"XBMD: Open: No device associated with this file.");
+        return -EBUSY;
+    }
+    
+    if (!dev->baseVirtual || !dev->readBuffer || !dev->writeBuffer) {
+        return -ENOMEM;
+    }
+    
+    // TODO(michiel): Check for 0 dev
+    printk(KERN_INFO"%s: Open: module opened\n", dev->name);
   return SUCCESS;
 }
 
@@ -172,7 +194,8 @@ int XPCIe_Open(struct inode *inode, struct file *filp)
 //---------------------------------------------------------------------------
 int XPCIe_Release(struct inode *inode, struct file *filp)
 {
-  printk(KERN_INFO"%s: Release: module released\n",gDrvrName);
+    xbmd_device *dev = filp->private_data;
+  printk(KERN_INFO"%s: Release: module released\n", dev->name);
   return(SUCCESS);
 }
 
@@ -197,17 +220,18 @@ int XPCIe_Release(struct inode *inode, struct file *filp)
 ssize_t XPCIe_Write(struct file *filp, const char __user *buf, size_t count,
                        loff_t *f_pos)
 {
+    xbmd_device *dev = filp->private_data;
     int ret = SUCCESS;
-    if (copy_from_user(gWriteBuffer, buf, count)) {
-        printk("%s: XPCIe_Write: Failed copy from user.\n", gDrvrName);
+    if (copy_from_user(dev->writeBuffer, buf, count)) {
+        printk("%s: XPCIe_Write: Failed copy from user.\n", dev->name);
         return -EFAULT;
     }
-    printk(KERN_INFO"%s: XPCIe_Write: %ld bytes have been written...\n", gDrvrName, count);
-    if (copy_from_user(gReadBuffer, buf, count)) {
-        printk("%s: XPCIe_Write: Failed copy from user.\n", gDrvrName);
+    printk(KERN_INFO"%s: XPCIe_Write: %ld bytes have been written...\n", dev->name, count);
+    if (copy_from_user(dev->readBuffer, buf, count)) {
+        printk("%s: XPCIe_Write: Failed copy from user.\n", dev->name);
         return -EFAULT;
     }
-    printk(KERN_INFO"%s: XPCIe_Write: %ld bytes have been read...\n", gDrvrName, count);
+    printk(KERN_INFO"%s: XPCIe_Write: %ld bytes have been read...\n", dev->name, count);
     return (ret);
 }
 
@@ -233,11 +257,12 @@ ssize_t XPCIe_Write(struct file *filp, const char __user *buf, size_t count,
 
 ssize_t XPCIe_Read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
-    if (copy_to_user(buf, gWriteBuffer, count)) {
-        printk("%s: XPCIe_Read: Failed copy to user.\n", gDrvrName);
+    xbmd_device *dev = filp->private_data;
+    if (copy_to_user(buf, dev->writeBuffer, count)) {
+        printk("%s: XPCIe_Read: Failed copy to user.\n", dev->name);
         return -EFAULT;
     }
-    printk(KERN_INFO"%s: XPCIe_Read: %ld bytes have been read...\n", gDrvrName, count);
+    printk(KERN_INFO"%s: XPCIe_Read: %ld bytes have been read...\n", dev->name, count);
     return (0);
 }
 
@@ -257,18 +282,19 @@ ssize_t XPCIe_Read(struct file *filp, char __user *buf, size_t count, loff_t *f_
 // Date      Who  Description
 //
 //---------------------------------------------------------------------------
-#define IOCTL_READ_REG(x)     { regx = XPCIe_ReadReg(x); ret = put_user(regx, (u32 *)arg); }
-#define IOCTL_WRITE_REG(x)    { XPCIe_WriteReg(x, arg); }
+#define IOCTL_READ_REG(x)     { regx = XPCIe_ReadReg(dev, x); ret = put_user(regx, (u32 *)arg); }
+#define IOCTL_WRITE_REG(x)    { XPCIe_WriteReg(dev, x, arg); }
 long XPCIe_Ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
+    xbmd_device *dev = filp->private_data;
   u32 regx;
   int ret = SUCCESS;
 
   switch (cmd) {
         // Initailizes XBMD application
-        case XBMD_IOC_INITCARD:       { XPCIe_InitCard(); } break;
+        case XBMD_IOC_INITCARD:       { XPCIe_InitCard(dev); } break;
         // Resets XBMD applications
-        case XBMD_IOC_RESET:          { XPCIe_InitiatorReset(); } break;
+        case XBMD_IOC_RESET:          { XPCIe_InitiatorReset(dev); } break;
         case XBMD_IOC_DISP_REGS:      {} break;
         // Read: Device Control Status Register
         case XBMD_IOC_READ_CTRL:      IOCTL_READ_REG(Reg_DeviceCS) break;
@@ -343,7 +369,7 @@ long XPCIe_Ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         if (get_user(regx, (u32 *)arg) < 0) {
             ret = -EFAULT;
         } else {
-        regx = XPCIe_ReadReg(regx);
+        regx = XPCIe_ReadReg(dev, regx);
         ret = put_user(regx, (u32 *)arg);
             }
         } break;
@@ -352,7 +378,7 @@ long XPCIe_Ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         if (get_user(regx, (u32 *)arg) < 0) {
              ret = -EFAULT;
         } else {
-        regx = XPCIe_ReadCfgReg(regx);
+                regx = XPCIe_ReadCfgReg(dev, regx);
         ret = put_user(regx, (u32 *)arg);
             }
         } break;
@@ -362,7 +388,7 @@ long XPCIe_Ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
             if (get_user(bmdArg.raw, (u64 *)arg) < 0) {
                 ret = -EFAULT;
             } else {
-      	    XPCIe_WriteReg(bmdArg.reg, bmdArg.value);
+                XPCIe_WriteReg(dev, bmdArg.reg, bmdArg.value);
             printk(KERN_WARNING"%d: Write Register.\n", bmdArg.reg);
             printk(KERN_WARNING"%d: Write Value.\n", bmdArg.value);
             }
@@ -373,7 +399,7 @@ long XPCIe_Ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
             if (get_user(cfgArg.raw, (u64 *)arg) < 0) {
                 ret = -EFAULT;
             } else {
-            XPCIe_WriteCfgReg(cfgArg.reg, cfgArg.value);
+                XPCIe_WriteCfgReg(dev, cfgArg.reg, cfgArg.value);
             printk(KERN_WARNING"%d: Write Register.\n", cfgArg.reg);
             printk(KERN_WARNING"%d: Write Value.\n", cfgArg.value);
             }
@@ -397,174 +423,248 @@ struct file_operations XPCIe_Intf = {
     release:    XPCIe_Release,
 };
 
-static int XPCIe_init(void)
+//--- XPCIe_exit(): Performs any cleanup required before releasing the device
+//--- Arguments: None
+//--- Return Value: None
+//--- Detailed Description: Performs all cleanup functions required before releasing device
+static void
+XPCIe_Exit(xbmd_device *dev)
+{
+    if (!dev) {
+        return;
+    }
+    
+    if (dev->writeBuffer) {
+        // Assume we also have a chrdev (chrdev is initialized just after writeBuffer is allocated)
+        dev_t devno = MKDEV(gDrvrMajor, gDrvrMinor);
+        cdev_del(&dev->chrDev);
+        unregister_chrdev_region(devno, 1);
+        
+        pci_free_consistent(dev->pciDev, DMA_BUF_SIZE, dev->writeBuffer, dev->writeAddr);
+        dev->writeBuffer = 0;
+        dev->writeAddr = 0;
+    }
+    
+    if (dev->readBuffer) {
+        pci_free_consistent(dev->pciDev, DMA_BUF_SIZE, dev->readBuffer, dev->readAddr);
+        dev->readBuffer = 0;
+        dev->readAddr = 0;
+    }
+    
+    if (dev->irq >= 0) {
+        free_irq(dev->irq, dev);
+        #if 1
+        pci_free_irq_vectors(dev->pciDev);
+        #endif
+        dev->irq = -1;
+    }
+    
+    if (dev->baseVirtual) {
+        pci_iounmap(dev->pciDev, dev->baseVirtual);
+        dev->baseVirtual = 0;
+    }
+    
+    pci_release_regions(dev->pciDev);
+    pci_clear_master(dev->pciDev);
+    pci_disable_device(dev->pciDev);
+    
+    dev->baseAddr = 0;
+    kfree(dev);
+    
+    // Update Kernel log stating driver is unloaded
+    printk(KERN_ALERT"%s driver is unloaded\n", dev->name);
+}
+
+static int
+XPCIe_Probe(struct pci_dev *pci, const struct pci_device_id *pci_id)
 {
     u8 version;
+    dev_t devno;
   // Find the Xilinx EP device.  The device is found by matching device and vendor ID's which is defined
   // at the top of this file.  Be default, the driver will look for 10EE & 0007.  If the core is generated
   // with other settings, the defines at the top must be changed or the driver will not load
-
-  // gDev = pci_get_device(PCI_VENDOR_ID_XILINX, PCI_DEVICE_ID_XILINX_PCIE, NULL);
-  if (NULL == gDev) {
-
-    // If a matching device or vendor ID is not found, return failure and update kernel log.
-    // NOTE: In fedora systems, the kernel log is located at: /var/log/messages
-    printk(KERN_WARNING"%s: Init: Hardware not found.\n", gDrvrName);
-    return (CRIT_ERR);
-  }
-
+// Update: The pci kernel module does the lookup now and calls this probe function if it
+    // matched the ids defined at the top of the file.
+    
+    // TODO(michiel): Ref for now: https://elixir.bootlin.com/linux/v4.9.150/source/drivers/gpu/drm/bridge/dw-hdmi-ahb-audio.c#L582
+    xbmd_device *dev = kzalloc(sizeof(xbmd_device), GFP_KERNEL);
+    dev->name = "xbmd";
+    dev->pciDev = pci;
+    dev->irq = -1;
+    
   // Get Base Address of registers from pci structure. Should come from pci_dev
   // structure, but that element seems to be missing on the development system.
-  gBaseHdwr = pci_resource_start (gDev, 0);
+  dev->baseAddr = pci_resource_start(pci, 0);
 
-  if (0 > gBaseHdwr) {
-    printk(KERN_WARNING"%s: Init: Base Address not set.\n", gDrvrName);
+    if (dev->baseAddr < 0) {
+    printk(KERN_WARNING"%s: Init: Base Address not set.\n", dev->name);
+        XPCIe_Exit(dev);
     return (CRIT_ERR);
   }
 
   // Print Base Address to kernel log
-  printk(KERN_INFO"%s: Init: Base hw val %X\n", gDrvrName, (unsigned int)gBaseHdwr);
+  printk(KERN_INFO"%s: Init: Base hw val %X\n", dev->name, (unsigned int)dev->baseAddr);
 
   // Get the Base Address Length
-  gBaseLen = pci_resource_len (gDev, 0);
+   dev->baseLength = pci_resource_len(pci, 0);
 
   // Print the Base Address Length to Kernel Log
-  printk(KERN_INFO"%s: Init: Base hw len %d\n", gDrvrName, (unsigned int)gBaseLen);
+  printk(KERN_INFO"%s: Init: Base hw len %d\n", dev->name, (unsigned int)dev->baseLength);
 
   // Remap the I/O register block so that it can be safely accessed.
   // I/O register block starts at gBaseHdwr and is 32 bytes long.
-  // It is cast to char because that is the way Linus does it.
-  // Reference "/usr/src/Linux-2.4/Documentation/IO-mapping.txt".
-  gBaseVirt = pci_iomap(gDev, 0, gBaseLen);
-  if (!gBaseVirt) {
-    printk(KERN_WARNING"%s: Init: Could not remap memory.\n", gDrvrName);
+  dev->baseVirtual = pci_iomap(pci, 0, dev->baseLength);
+  if (!dev->baseVirtual) {
+        printk(KERN_WARNING"%s: Init: Could not remap memory.\n", dev->name);
+        XPCIe_Exit(dev);
     return (CRIT_ERR);
   }
 
   // Print out the aquired virtual base addresss
-  printk(KERN_INFO"%s: Init: Virt HW address %lX\n", gDrvrName, (unsigned long)gBaseVirt);
+  printk(KERN_INFO"%s: Init: Virt HW address %lX\n", dev->name,
+           (unsigned long)dev->baseVirtual);
 
   // Get IRQ from pci_dev structure. It may have been remapped by the kernel,
   // and this value will be the correct one.
-  gIrq = gDev->irq;
-  printk(KERN_INFO"%s: Init: Device IRQ: %d\n",gDrvrName, gIrq);
+   dev->irq = pci->irq;
+  printk(KERN_INFO"%s: Init: Device IRQ: %d\n",dev->name, dev->irq);
 
-
+    
   //---START: Initialize Hardware
 
   // Check the memory region to see if it is in use
   // Try to gain exclusive control of memory for demo hardware.
-    if (0 > pci_request_regions(gDev, "3GIO_Demo_Drv")) {
-        printk(KERN_WARNING"%s: Init: Memory in use.\n", gDrvrName);
+    if (0 > pci_request_regions(pci, "3GIO_Demo_Drv")) {
+        printk(KERN_WARNING"%s: Init: Memory in use.\n", dev->name);
+        XPCIe_Exit(dev);
         return (CRIT_ERR);
     }
 
-  // Update flags
-  gStatFlags = gStatFlags | HAVE_REGION;
-
-  printk(KERN_INFO"%s: Init: Initialize Hardware Done..\n",gDrvrName);
+  printk(KERN_INFO"%s: Init: Initialize Hardware Done..\n",dev->name);
     
     // Bus Master Enable
-    if (0 > pci_enable_device(gDev)) {
-        printk(KERN_WARNING"%s: Init: Device not enabled.\n", gDrvrName);
+    if (0 > pci_enable_device(pci)) {
+        printk(KERN_WARNING"%s: Init: Device not enabled.\n", dev->name);
+        XPCIe_Exit(dev);
         return (CRIT_ERR);
     }
-    pci_set_master(gDev);
+    pci_set_master(pci);
     
   // Request IRQ from OS.
   // In past architectures, the SHARED and SAMPLE_RANDOM flags were called: SA_SHIRQ and SA_SAMPLE_RANDOM
   // respectively.  In older Fedora core installations, the request arguments may need to be reverted back.
   // SA_SHIRQ | SA_SAMPLE_RANDOM
-    printk(KERN_INFO"%s: ISR Setup..\n", gDrvrName);
+    printk(KERN_INFO"%s: ISR Setup..\n", dev->name);
   #if 0
-  if (0 > request_irq(gIrq, XPCIe_IRQHandler, IRQF_SHARED, gDrvrName, gDev)) {
-    printk(KERN_WARNING"%s: Init: Unable to allocate IRQ",gDrvrName);
+  if (0 > request_irq(dev->irq, XPCIe_IRQHandler, IRQF_SHARED, dev->name, dev)) {
+    printk(KERN_WARNING"%s: Init: Unable to allocate IRQ",dev->name);
+        XPCIe_Exit(dev);
     return (CRIT_ERR);
   }
     #else
-    if (pci_alloc_irq_vectors(gDev, 8, 8, PCI_IRQ_MSI) != 8) {
-        printk(KERN_WARNING"%s: Init: Unable to allocate all MSI IRQs", gDrvrName);
+    if (pci_alloc_irq_vectors(dev->pciDev, 8, 8, PCI_IRQ_MSI) != 8) {
+        printk(KERN_WARNING"%s: Init: Unable to allocate all MSI IRQs", dev->name);
+        XPCIe_Exit(dev);
         return CRIT_ERR;
     }
     
-    gIrq = pci_irq_vector(gDev, 0);
-    if (0 > gIrq) {
-        printk(KERN_WARNING"%s: Init: Unable to find IRQ vector", gDrvrName);
+     dev->irq = pci_irq_vector(pci, 0);
+    if (0 > dev->irq) {
+        printk(KERN_WARNING"%s: Init: Unable to find IRQ vector", dev->name);
+        XPCIe_Exit(dev);
         return CRIT_ERR;
     }
-    if (0 > request_irq(gIrq, XPCIe_IRQMSIHandler, 0, gDrvrName, gDev)) {
-        printk(KERN_WARNING"%s: Init: Unable to allocate IRQ", gDrvrName);
+    if (0 > request_irq(dev->irq, XPCIe_IRQMSIHandler, 0, dev->name, dev)) {
+        printk(KERN_WARNING"%s: Init: Unable to allocate IRQ", dev->name);
+        XPCIe_Exit(dev);
         return (CRIT_ERR);
     }
     #endif
-  // Update flags stating IRQ was successfully obtained
-  gStatFlags = gStatFlags | HAVE_IRQ;
 
   //--- END: Initialize Hardware
 
   //--- START: Allocate Buffers
 
   // Allocate the read buffer with size DMA_BUF_SIZE and return the starting address
-  gReadBuffer = pci_alloc_consistent(gDev, DMA_BUF_SIZE, &gReadHWAddr);
-  if (NULL == gReadBuffer) {
-    printk(KERN_CRIT"%s: Init: Unable to allocate gBuffer.\n",gDrvrName);
+    dev->readBuffer = pci_alloc_consistent(pci, DMA_BUF_SIZE, &dev->readAddr);
+  if (!dev->readBuffer) {
+        printk(KERN_CRIT"%s: Init: Unable to allocate read buffer.\n",dev->name);
+        XPCIe_Exit(dev);
     return (CRIT_ERR);
   }
   // Print Read buffer size and address to kernel log
-  printk(KERN_INFO"%s: Read Buffer Allocation: %lX->%X\n", gDrvrName, (unsigned long)gReadBuffer, (unsigned int)gReadHWAddr);
+  printk(KERN_INFO"%s: Read Buffer Allocation: %lX->%X\n", dev->name,
+           (unsigned long)dev->readBuffer, (unsigned int)dev->readAddr);
 
   // Allocate the write buffer with size DMA_BUF_SIZE and return the starting address
-  gWriteBuffer = pci_alloc_consistent(gDev, DMA_BUF_SIZE, &gWriteHWAddr);
-  if (NULL == gWriteBuffer) {
-    printk(KERN_CRIT"%s: Init: Unable to allocate gBuffer.\n",gDrvrName);
+    dev->writeBuffer = pci_alloc_consistent(pci, DMA_BUF_SIZE, &dev->writeAddr);
+  if (!dev->writeBuffer) {
+        printk(KERN_CRIT"%s: Init: Unable to allocate gBuffer.\n",dev->name);
+        XPCIe_Exit(dev);
     return (CRIT_ERR);
   }
   // Print Write buffer size and address to kernel log
-  printk(KERN_INFO"%s: Write Buffer Allocation: %lX->%X\n", gDrvrName, (unsigned long)gWriteBuffer, (unsigned int)gWriteHWAddr);
+  printk(KERN_INFO"%s: Write Buffer Allocation: %lX->%X\n", dev->name,
+           (unsigned long)dev->writeBuffer, (unsigned int)dev->writeAddr);
 
   //--- END: Allocate Buffers
 
   //--- START: Register Driver
 
   // Register with the kernel as a character device.
-  if (0 > register_chrdev(gDrvrMajor, gDrvrName, &XPCIe_Intf)) {
-    printk(KERN_WARNING"%s: Init: will not register\n", gDrvrName);
-    return (CRIT_ERR);
-  }
-  printk(KERN_INFO"%s: Init: module registered\n", gDrvrName);
-  gStatFlags = gStatFlags | HAVE_KREG;
+    if (gDrvrMajor) {
+        dev_t devno = MKDEV(gDrvrMajor, gDrvrMinor);
+        if (0 > register_chrdev_region(devno, 1, dev->name)) {
+            printk(KERN_WARNING"%s: Init: will not register\n", dev->name);
+            XPCIe_Exit(dev);
+            return (CRIT_ERR);
+        }
+    } else {
+        dev_t devno = 0;
+        if (0 > alloc_chrdev_region(&devno, gDrvrMinor, 1, dev->name)) {
+            printk(KERN_WARNING"%s: Init: will not register\n", dev->name);
+            XPCIe_Exit(dev);
+            return (CRIT_ERR);
+        }
+        gDrvrMajor = MAJOR(devno);
+    }
+    
+    devno = MKDEV(gDrvrMajor, gDrvrMinor);
+    cdev_init(&dev->chrDev, &XPCIe_Intf);
+    dev->chrDev.owner = THIS_MODULE;
+    if (0 > cdev_add(&dev->chrDev, devno, 1)) {
+        printk(KERN_WARNING"%s: Init: will not register\n", dev->name);
+        XPCIe_Exit(dev);
+        return (CRIT_ERR);
+    }
+    
+  printk(KERN_INFO"%s: Init: module registered\n", dev->name);
 
   //--- END: Register Driver
 
   // The driver is now successfully loaded.  All HW is initialized, IRQ's assigned, and buffers allocated
-  printk("%s driver is loaded\n", gDrvrName);
+  printk("%s driver is loaded\n", dev->name);
 
-
-    pci_read_config_byte(gDev, 8, &version);
-    printk(KERN_INFO "%s: Version: %d\n", gDrvrName, version);
+    pci_read_config_byte(pci, 8, &version);
+    printk(KERN_INFO "%s: Version: %d\n", dev->name, version);
 
   // Initializing card registers
-  XPCIe_InitCard();
-
+  XPCIe_InitCard(dev);
+    
+    pci_set_drvdata(pci, dev);
+    
   return 0;
-}
-
-static int
-XPCIe_probe(struct pci_dev *pci, const struct pci_device_id *pci_id)
-{
-    gDev = pci;
-    return XPCIe_init();
 }
 
 //--- XPCIe_InitiatorReset(): Resets the XBMD reference design
 //--- Arguments: None
 //--- Return Value: None
 //--- Detailed Description: Writes a 1 to the DCSR register which resets the XBMD design
-void XPCIe_InitiatorReset()
+void XPCIe_InitiatorReset(xbmd_device *dev)
 {
-  XPCIe_WriteReg(Reg_DeviceCS, 1);
+  XPCIe_WriteReg(dev, Reg_DeviceCS, 1);
     // Write: DCSR (offset 0) with value of 1 (Reset Device)
-    XPCIe_WriteReg(Reg_DeviceCS, 0);
+    XPCIe_WriteReg(dev, Reg_DeviceCS, 0);
     // Write: DCSR (offset 0) with value of 0 (Make Active)
 }
 
@@ -574,77 +674,25 @@ void XPCIe_InitiatorReset()
 //--- Return Value: None
 //--- Detailed Description: 1) Resets device
 //---                       2) Writes specific values into the XBMD registers inside the EP
-void XPCIe_InitCard()
+void XPCIe_InitCard(xbmd_device *dev)
 {
-    XPCIe_InitiatorReset();
+    XPCIe_InitiatorReset(dev);
 
-  XPCIe_WriteReg(Reg_WriteTlpAddress, gWriteHWAddr);        // Write: Write DMA TLP Address register with starting address
-  XPCIe_WriteReg(Reg_WriteTlpSize, 0x20);                // Write: Write DMA TLP Size register with default value (32dwords)
-  XPCIe_WriteReg(Reg_WriteTlpCount, 0x2000);              // Write: Write DMA TLP Count register with default value (2000)
-  XPCIe_WriteReg(Reg_WriteTlpPattern, 0x00000000);          // Write: Write DMA TLP Pattern register with default value (0x0)
+    XPCIe_WriteReg(dev, Reg_WriteTlpAddress, dev->writeAddr);        // Write: Write DMA TLP Address register with starting address
+    XPCIe_WriteReg(dev, Reg_WriteTlpSize, 0x20);                // Write: Write DMA TLP Size register with default value (32dwords)
+    XPCIe_WriteReg(dev, Reg_WriteTlpCount, 0x2000);              // Write: Write DMA TLP Count register with default value (2000)
+    XPCIe_WriteReg(dev, Reg_WriteTlpPattern, 0x00000000);          // Write: Write DMA TLP Pattern register with default value (0x0)
 
-    XPCIe_WriteReg(Reg_ReadTlpPattern, 0xfeedbeef);          // Write: Read DMA Expected Data Pattern with default value (feedbeef)
-    XPCIe_WriteReg(Reg_ReadTlpAddress, gReadHWAddr);         // Write: Read DMA TLP Address register with starting address.
-  XPCIe_WriteReg(Reg_ReadTlpSize, 0x20);                // Write: Read DMA TLP Size register with default value (32dwords)
-  XPCIe_WriteReg(Reg_ReadTlpCount, 0x2000);              // Write: Read DMA TLP Count register with default value (2000)
+    XPCIe_WriteReg(dev, Reg_ReadTlpPattern, 0xfeedbeef);          // Write: Read DMA Expected Data Pattern with default value (feedbeef)
+    XPCIe_WriteReg(dev, Reg_ReadTlpAddress, dev->readAddr);         // Write: Read DMA TLP Address register with starting address.
+    XPCIe_WriteReg(dev, Reg_ReadTlpSize, 0x20);                // Write: Read DMA TLP Size register with default value (32dwords)
+    XPCIe_WriteReg(dev, Reg_ReadTlpCount, 0x2000);              // Write: Read DMA TLP Count register with default value (2000)
 }
 
-//--- XPCIe_exit(): Performs any cleanup required before releasing the device
-//--- Arguments: None
-//--- Return Value: None
-//--- Detailed Description: Performs all cleanup functions required before releasing device
-static void XPCIe_exit(void)
+void XPCIe_Remove(struct pci_dev *pci)
 {
-
-    // Check if we have a memory region and free it
-    if (gStatFlags & HAVE_REGION) {
-        (void) pci_release_regions(gDev);
-    }
-
-    // Check if we have an IRQ and free it
-    if ((gStatFlags & HAVE_IRQ) && (gIrq != -1)) {
-        (void) free_irq(gIrq, gDev);
-    }
-
-    // Free Write and Read buffers allocated to use
-    // if (NULL != gReadBuffer)
-    //     (void) kfree(gReadBuffer);
-    // if (NULL != gWriteBuffer)
-    //     (void) kfree(gWriteBuffer);
-
-    // Free memory allocated to our Endpoint
-    if (NULL != gReadBuffer)
-        pci_free_consistent(gDev, DMA_BUF_SIZE, gReadBuffer, gReadHWAddr);
-    if (NULL != gWriteBuffer)
-        pci_free_consistent(gDev, DMA_BUF_SIZE, gWriteBuffer, gWriteHWAddr);
-
-    gReadBuffer = NULL;
-    gWriteBuffer = NULL;
-
-    // Free up memory pointed to by virtual address
-    if (gBaseVirt != NULL) {
-        pci_iounmap(gDev, gBaseVirt);
-     }
-
-    gBaseVirt = NULL;
-
-    // Unregister Device Driver
-    if (gStatFlags & HAVE_KREG) {
-      unregister_chrdev(gDrvrMajor, gDrvrName);
-    }
-
-    gStatFlags = 0;
-
-    // Update Kernel log stating driver is unloaded
-    printk(KERN_ALERT"%s driver is unloaded\n", gDrvrName);
+    XPCIe_Exit(pci_get_drvdata(pci));
 }
-
-static void
-XPCIe_remove(struct pci_dev *pci)
-{
-    XPCIe_exit();
-}
-
 
 static const struct pci_device_id XPCIe_ids[] =
 {
@@ -659,8 +707,8 @@ static struct pci_driver XPCIe_drive =
 {
     .name = KBUILD_MODNAME,
     .id_table = XPCIe_ids,
-    .probe = XPCIe_probe,
-    .remove = XPCIe_remove,
+    .probe = XPCIe_Probe,
+    .remove = XPCIe_Remove,
 };
 
 module_pci_driver(XPCIe_drive);
@@ -675,22 +723,23 @@ module_pci_driver(XPCIe_drive);
 irqreturn_t XPCIe_IRQHandler(int irq, void *dev_id)
 {
     u32 i, regx, msiReg;
+    xbmd_device *dev = dev_id;
     
-     msiReg = XPCIe_ReadReg(Reg_DeviceMSIControl);
+     msiReg = XPCIe_ReadReg(dev, Reg_DeviceMSIControl);
     if (msiReg & 0x80000000) {
         // NOTE(michiel): Our interrupt
-    printk(KERN_WARNING"%s: Interrupt Handler Start ..",gDrvrName);
+    printk(KERN_WARNING"%s: Interrupt Handler Start ..",dev->name);
     
     for (i = 0; i < 32; i++) {
-        regx = XPCIe_ReadReg(i);
-        printk(KERN_WARNING"%s: REG<%d> : 0x%X\n", gDrvrName, i, regx);
+        regx = XPCIe_ReadReg(dev, i);
+        printk(KERN_WARNING"%s: REG<%d> : 0x%X\n", dev->name, i, regx);
     }
         
-        XPCIe_WriteReg(Reg_DeviceMSIControl, 0x100 | (msiReg & 0xFF));
-        XPCIe_ReadReg(Reg_DeviceMSIControl);
-        XPCIe_WriteReg(Reg_DeviceMSIControl, (msiReg & 0xFF));
+        XPCIe_WriteReg(dev, Reg_DeviceMSIControl, 0x100 | (msiReg & 0xFF));
+        XPCIe_ReadReg(dev, Reg_DeviceMSIControl);
+        XPCIe_WriteReg(dev, Reg_DeviceMSIControl, (msiReg & 0xFF));
     
-    printk(KERN_WARNING"%s: Interrupt Handler End ..\n", gDrvrName);
+    printk(KERN_WARNING"%s: Interrupt Handler End ..\n", dev->name);
     
         return IRQ_HANDLED;
     } else {
@@ -701,41 +750,42 @@ irqreturn_t XPCIe_IRQHandler(int irq, void *dev_id)
 irqreturn_t XPCIe_IRQMSIHandler(int irq, void *dev_id)
 {
     u32 i, regx;
+    xbmd_device *dev = dev_id;
 
-    printk(KERN_WARNING"%s: Interrupt Handler Start ..",gDrvrName);
+    printk(KERN_WARNING"%s: Interrupt Handler Start ..",dev->name);
 
     for (i = 0; i < 32; i++) {
-        regx = XPCIe_ReadReg(i);
-        printk(KERN_WARNING"%s : REG<%d> : 0x%X\n", gDrvrName, i, regx);
+        regx = XPCIe_ReadReg(dev, i);
+        printk(KERN_WARNING"%s : REG<%d> : 0x%X\n", dev->name, i, regx);
     }
 
-    printk(KERN_WARNING"%s: Interrupt Handler End ..\n", gDrvrName);
+    printk(KERN_WARNING"%s: Interrupt Handler End ..\n", dev->name);
 
     return IRQ_HANDLED;
 }
 
-u32 XPCIe_ReadReg (u32 dw_offset)
+u32 XPCIe_ReadReg(xbmd_device *dev, u32 dw_offset)
 {
         u32 ret = 0;
-        ret = readl(gBaseVirt + (4 * dw_offset));
+        ret = readl(dev->baseVirtual + (4 * dw_offset));
 
         return ret;
 }
 
-void XPCIe_WriteReg (u32 dw_offset, u32 val)
+void XPCIe_WriteReg(xbmd_device *dev, u32 dw_offset, u32 val)
 {
-        writel(val, (gBaseVirt + (4 * dw_offset)));
+        writel(val, (dev->baseVirtual + (4 * dw_offset)));
 }
 
+#if 0
 int XPCIe_ReadMem(char *buf, size_t count)
 {
-
     int ret = 0;
     dma_addr_t dma_addr;
 
     //make sure passed in buffer is large enough
     if ( count < DMA_BUF_SIZE ) {
-      printk("%s: XPCIe_Read: passed in buffer too small.\n", gDrvrName);
+      printk("%s: XPCIe_Read: passed in buffer too small.\n", dev->name);
       ret = -1;
       goto exit;
     }
@@ -747,7 +797,7 @@ int XPCIe_ReadMem(char *buf, size_t count)
 
     dma_addr = pci_map_single(gDev, gReadBuffer, DMA_BUF_SIZE, PCI_DMA_FROMDEVICE);
     if ( 0 == dma_addr )  {
-        printk("%s: XPCIe_Read: Map error.\n",gDrvrName);
+        printk("%s: XPCIe_Read: Map error.\n",dev->name);
         ret = -1;
         goto exit;
     }
@@ -759,7 +809,7 @@ int XPCIe_ReadMem(char *buf, size_t count)
     // Do DMA transfer here....
 
     printk("%s: XPCIe_Read: ReadBuf Virt Addr = %lX Phy Addr = %X.\n",
-            gDrvrName, (unsigned long)gReadBuffer, (unsigned int)dma_addr);
+            dev->name, (unsigned long)gReadBuffer, (unsigned int)dma_addr);
 
     // Unmap the DMA buffer so it is safe for normal access again.
     pci_unmap_single(gDev, dma_addr, DMA_BUF_SIZE, PCI_DMA_FROMDEVICE);
@@ -769,7 +819,7 @@ int XPCIe_ReadMem(char *buf, size_t count)
     // Now it is safe to copy the data to user space.
     if ( copy_to_user(buf, gReadBuffer, DMA_BUF_SIZE) )  {
         ret = -1;
-        printk("%s: XPCIe_Read: Failed copy to user.\n",gDrvrName);
+        printk("%s: XPCIe_Read: Failed copy to user.\n",dev->name);
         goto exit;
     }
     exit:
@@ -781,7 +831,7 @@ ssize_t XPCIe_WriteMem(const char *buf, size_t count) {
     dma_addr_t dma_addr;
 
     if ( (count % 4) != 0 )  {
-       printk("%s: XPCIe_Write: Buffer length not dword aligned.\n",gDrvrName);
+       printk("%s: XPCIe_Write: Buffer length not dword aligned.\n",dev->name);
        ret = -1;
        goto exit;
     }
@@ -789,7 +839,7 @@ ssize_t XPCIe_WriteMem(const char *buf, size_t count) {
     // Now it is safe to copy the data from user space.
     if ( copy_from_user(gWriteBuffer, buf, count) )  {
         ret = -1;
-        printk("%s: XPCIe_Write: Failed copy to user.\n",gDrvrName);
+        printk("%s: XPCIe_Write: Failed copy to user.\n",dev->name);
         goto exit;
     }
 
@@ -801,7 +851,7 @@ ssize_t XPCIe_WriteMem(const char *buf, size_t count) {
 
     dma_addr = pci_map_single(gDev, gWriteBuffer, DMA_BUF_SIZE, PCI_DMA_FROMDEVICE);
     if ( 0 == dma_addr )  {
-        printk("%s: XPCIe_Write: Map error.\n",gDrvrName);
+        printk("%s: XPCIe_Write: Map error.\n",dev->name);
         ret = -1;
         goto exit;
     }
@@ -813,7 +863,7 @@ ssize_t XPCIe_WriteMem(const char *buf, size_t count) {
     // Do DMA transfer here....
 
     printk("%s: XPCIe_Write: WriteBuf Virt Addr = %lXx Phy Addr = %X.\n",
-           gDrvrName, (unsigned long)gReadBuffer, (unsigned int)dma_addr);
+           dev->name, (unsigned long)gReadBuffer, (unsigned int)dma_addr);
 
     // Unmap the DMA buffer so it is safe for normal access again.
     pci_unmap_single(gDev, dma_addr, DMA_BUF_SIZE, PCI_DMA_FROMDEVICE);
@@ -823,19 +873,20 @@ ssize_t XPCIe_WriteMem(const char *buf, size_t count) {
     exit:
       return (ret);
 }
+#endif
 
-u32 XPCIe_ReadCfgReg (u32 byte) {
+u32 XPCIe_ReadCfgReg(xbmd_device *dev, u32 byte) {
    u32 pciReg;
-   if (pci_read_config_dword(gDev, byte, &pciReg) < 0) {
-        printk("%s: XPCIe_ReadCfgReg: Reading PCI interface failed.",gDrvrName);
+   if (pci_read_config_dword(dev->pciDev, byte, &pciReg) < 0) {
+        printk("%s: XPCIe_ReadCfgReg: Reading PCI interface failed.",dev->name);
         return (-1);
    }
    return (pciReg);
 }
 
-u32 XPCIe_WriteCfgReg (u32 byte, u32 val) {
-   if (pci_write_config_dword(gDev, byte, val) < 0) {
-        printk("%s: XPCIe_WriteCfgReg: Writing PCI interface failed.",gDrvrName);
+u32 XPCIe_WriteCfgReg(xbmd_device *dev, u32 byte, u32 val) {
+   if (pci_write_config_dword(dev->pciDev, byte, val) < 0) {
+        printk("%s: XPCIe_WriteCfgReg: Writing PCI interface failed.",dev->name);
         return (-1);
    }
    return 1;
