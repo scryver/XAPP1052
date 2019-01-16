@@ -453,11 +453,11 @@ XPCIe_Exit(xbmd_device *dev)
     
     if (dev->irq >= 0) {
         free_irq(dev->irq, dev);
-        #if 1
+        dev->irq = -1;
+    #if 1
         pci_free_irq_vectors(dev->pciDev);
         #endif
-        dev->irq = -1;
-    }
+        }
     
     if (dev->baseVirtual) {
         pci_iounmap(dev->pciDev, dev->baseVirtual);
@@ -467,6 +467,7 @@ XPCIe_Exit(xbmd_device *dev)
     pci_release_regions(dev->pciDev);
     pci_clear_master(dev->pciDev);
     pci_disable_device(dev->pciDev);
+    pci_set_drvdata(dev->pciDev, 0);
     
     dev->baseAddr = 0;
     kfree(dev);
@@ -491,6 +492,24 @@ XPCIe_Probe(struct pci_dev *pci, const struct pci_device_id *pci_id)
     dev->name = "xbmd";
     dev->pciDev = pci;
     dev->irq = -1;
+    
+    pci_set_drvdata(pci, dev);
+    
+    // Bus Master Enable
+    if (0 > pci_enable_device(pci)) {
+        printk(KERN_WARNING"%s: Init: Device not enabled.\n", dev->name);
+        XPCIe_Exit(dev);
+        return (CRIT_ERR);
+    }
+    pci_set_master(pci);
+    
+    // Check the memory region to see if it is in use
+    // Try to gain exclusive control of memory for demo hardware.
+    if (0 > pci_request_regions(pci, "3GIO_Demo_Drv")) {
+        printk(KERN_WARNING"%s: Init: Memory in use.\n", dev->name);
+        XPCIe_Exit(dev);
+        return (CRIT_ERR);
+    }
     
   // Get Base Address of registers from pci structure. Should come from pci_dev
   // structure, but that element seems to be missing on the development system.
@@ -524,43 +543,24 @@ XPCIe_Probe(struct pci_dev *pci, const struct pci_device_id *pci_id)
   printk(KERN_INFO"%s: Init: Virt HW address %lX\n", dev->name,
            (unsigned long)dev->baseVirtual);
 
-  // Get IRQ from pci_dev structure. It may have been remapped by the kernel,
-  // and this value will be the correct one.
-   dev->irq = pci->irq;
-  printk(KERN_INFO"%s: Init: Device IRQ: %d\n",dev->name, dev->irq);
-
-    
   //---START: Initialize Hardware
 
-  // Check the memory region to see if it is in use
-  // Try to gain exclusive control of memory for demo hardware.
-    if (0 > pci_request_regions(pci, "3GIO_Demo_Drv")) {
-        printk(KERN_WARNING"%s: Init: Memory in use.\n", dev->name);
-        XPCIe_Exit(dev);
-        return (CRIT_ERR);
-    }
-
   printk(KERN_INFO"%s: Init: Initialize Hardware Done..\n",dev->name);
-    
-    // Bus Master Enable
-    if (0 > pci_enable_device(pci)) {
-        printk(KERN_WARNING"%s: Init: Device not enabled.\n", dev->name);
-        XPCIe_Exit(dev);
-        return (CRIT_ERR);
-    }
-    pci_set_master(pci);
     
   // Request IRQ from OS.
   // In past architectures, the SHARED and SAMPLE_RANDOM flags were called: SA_SHIRQ and SA_SAMPLE_RANDOM
   // respectively.  In older Fedora core installations, the request arguments may need to be reverted back.
   // SA_SHIRQ | SA_SAMPLE_RANDOM
-    printk(KERN_INFO"%s: ISR Setup..\n", dev->name);
-  #if 0
-  if (0 > request_irq(dev->irq, XPCIe_IRQHandler, IRQF_SHARED, dev->name, dev)) {
+    printk(KERN_INFO"%s: Init: Device IRQ: %d\n",dev->name, pci->irq);
+    #if 0
+    // Get IRQ from pci_dev structure. It may have been remapped by the kernel,
+    // and this value will be the correct one.
+    if (0 > request_irq(pci->irq, XPCIe_IRQHandler, IRQF_SHARED, dev->name, dev)) {
     printk(KERN_WARNING"%s: Init: Unable to allocate IRQ",dev->name);
         XPCIe_Exit(dev);
     return (CRIT_ERR);
   }
+    dev->irq = pci->irq;
     #else
     if (pci_alloc_irq_vectors(dev->pciDev, 8, 8, PCI_IRQ_MSI) != 8) {
         printk(KERN_WARNING"%s: Init: Unable to allocate all MSI IRQs", dev->name);
@@ -650,8 +650,6 @@ XPCIe_Probe(struct pci_dev *pci, const struct pci_device_id *pci_id)
 
   // Initializing card registers
   XPCIe_InitCard(dev);
-    
-    pci_set_drvdata(pci, dev);
     
   return 0;
 }

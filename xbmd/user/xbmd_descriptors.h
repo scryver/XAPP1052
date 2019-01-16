@@ -63,9 +63,9 @@ struct xbmd_descriptors_t{
   const char*       wr_pattern_new;         // Write Pattern
   const char*       rd_pattern_new;         // Read Pattern
 
-  char*             iter_count_t;           // Number of Iterations text
-  char*             wr_bytes_to_trans;      // Number of Write Bytes to Transfer
-  char*             rd_bytes_to_trans;      // Number of Read Bytes to Transfer
+    char              iter_count_t[16];       // Number of Iterations text
+    char              wr_bytes_to_trans[16];  // Number of Write Bytes to Transfer
+    char              rd_bytes_to_trans[16];  // Number of Read Bytes to Transfer
   int               bytes_to_trans;         // Temporary Bytes to Transfer (int)
   bool              wr_pattern_valid;       // Write Pattern Valid
   bool              rd_pattern_valid;       // Read Pattern Valid
@@ -74,8 +74,8 @@ struct xbmd_descriptors_t{
 
   const char*       wr_status;              // Write Status text
   const char*       rd_status;              // Read Status text 
-  char*             wr_mbps;                // Write Performance text 
-  char*             rd_mbps;                // Read Performance text
+    const char*       wr_mbps;                // Write Performance text 
+    const char*       rd_mbps;                // Read Performance text
 
   bool              phantom_enable;         // Phantom Functions enable
   bool              aut_change_enable;      // Autonomous Change enable 
@@ -102,7 +102,7 @@ struct xbmd_descriptors_t{
    
     // Number of iterations
     num_iter = 1;
-    iter_count_t= new char[10];
+        iter_count_t[0] = 0;
 
     // Write/Read TLP Size
     wr_tlp_size = 32;
@@ -112,9 +112,9 @@ struct xbmd_descriptors_t{
     num_wr_tlps = 32;               
     num_rd_tlps = 32;
 
-    // Write/Read # bytes to trans
-    wr_bytes_to_trans = new char[1];
-    rd_bytes_to_trans = new char[1];
+        // Write/Read # bytes to trans
+        wr_bytes_to_trans[0] = 0;
+        rd_bytes_to_trans[0] = 0;
     bytes_to_trans = 000000;
 
     // Write/Read Pattern variables
@@ -130,13 +130,13 @@ struct xbmd_descriptors_t{
     wr_enable = 0x00000000;
 
     // Write/Read Performance
-    rd_mbps = new char[1];
-    wr_mbps = new char[1];
+        rd_mbps = "";
+        wr_mbps = "";
 
     // DMA additional option variables
-    phantom_enable = false;
+    phantom_enable = true;
     aut_change_enable = false;
-    trans_streaming = false;
+    trans_streaming = true;
     random_enable = 0;
 
     // CFG Space Capabilities offsets

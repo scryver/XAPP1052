@@ -346,8 +346,10 @@ gboolean init_app (xbmd_app *app) {
 
   // Initialize WR/RD "Bytes to Transfer" text box. WR TLP size = DWORDs.
   // we need to multiply by 4 and total # of TLP's to get total bytes to transfer
-  sprintf(xbmd_descriptors.wr_bytes_to_trans,"%d",(xbmd_descriptors.wr_tlp_size*xbmd_descriptors.num_wr_tlps*4));
-  sprintf(xbmd_descriptors.rd_bytes_to_trans,"%d",(xbmd_descriptors.rd_tlp_size*xbmd_descriptors.num_rd_tlps*4));
+    snprintf(xbmd_descriptors.wr_bytes_to_trans, sizeof(xbmd_descriptors.wr_bytes_to_trans),
+             "%d",(xbmd_descriptors.wr_tlp_size*xbmd_descriptors.num_wr_tlps*4));
+    snprintf(xbmd_descriptors.rd_bytes_to_trans, sizeof(xbmd_descriptors.rd_bytes_to_trans),
+             "%d",(xbmd_descriptors.rd_tlp_size*xbmd_descriptors.num_rd_tlps*4));
   app->main_status_bar_context_id = gtk_statusbar_get_context_id (GTK_STATUSBAR (app->main_status_bar), "XBMD_READY");
 
 
@@ -442,7 +444,8 @@ void on_start_button_clicked(GtkButton *button, xbmd_app *app) {
 
     // Perform DMA for certain # of iterations  - use ii instead
     for (int ii = 0; ii < xbmd_descriptors.num_iter; ii++) {
-      sprintf(xbmd_descriptors.iter_count_t,"%d",(xbmd_descriptors.num_iter-ii));  // state what this is actually doing
+                snprintf(xbmd_descriptors.iter_count_t, sizeof(xbmd_descriptors.iter_count_t),
+                         "%d", (xbmd_descriptors.num_iter-ii));  // state what this is actually doing
       gtk_label_set_text(GTK_LABEL(app->iter_count_text), xbmd_descriptors.iter_count_t);
       REPAINT_GUI;
 
@@ -561,7 +564,8 @@ void on_wr_tlp_box_value_changed(GtkSpinButton *wr_size, xbmd_app *app) {
    xbmd_descriptors.bytes_to_trans = xbmd_descriptors.wr_tlp_size*xbmd_descriptors.num_wr_tlps*4;   //lets do an inline function
 
    //use sprintf to convert bytes_to_trans int to char* and then  update GUI
-   sprintf(xbmd_descriptors.wr_bytes_to_trans,"%d",xbmd_descriptors.bytes_to_trans);
+        snprintf(xbmd_descriptors.wr_bytes_to_trans, sizeof(xbmd_descriptors.wr_bytes_to_trans),
+                 "%d",xbmd_descriptors.bytes_to_trans);
    gtk_label_set_text(GTK_LABEL(app->write_bytes_to_transfer), xbmd_descriptors.wr_bytes_to_trans);
 }
 
@@ -580,7 +584,8 @@ void on_rd_tlp_box_value_changed(GtkSpinButton *rd_size, xbmd_app *app) {
    xbmd_descriptors.bytes_to_trans = xbmd_descriptors.rd_tlp_size*xbmd_descriptors.num_rd_tlps*4;
 
    //Use sprintf to convert bytes_to_trans int to char* and then update GUI
-   sprintf(xbmd_descriptors.rd_bytes_to_trans,"%d",xbmd_descriptors.bytes_to_trans);
+        snprintf(xbmd_descriptors.rd_bytes_to_trans, sizeof(xbmd_descriptors.rd_bytes_to_trans),
+                 "%d",xbmd_descriptors.bytes_to_trans);
    gtk_label_set_text(GTK_LABEL(app->read_bytes_to_transfer), xbmd_descriptors.rd_bytes_to_trans);;
 }
 
@@ -600,7 +605,8 @@ void on_wr_num_tlps_spinner_value_changed(GtkSpinButton *wr_tlps, xbmd_app *app)
    xbmd_descriptors.bytes_to_trans = xbmd_descriptors.wr_tlp_size*xbmd_descriptors.num_wr_tlps*4;
 
    //Convert bytes_to_trans int to char* and update GUI
-   sprintf(xbmd_descriptors.wr_bytes_to_trans,"%d",xbmd_descriptors.bytes_to_trans);
+        snprintf(xbmd_descriptors.wr_bytes_to_trans, sizeof(xbmd_descriptors.wr_bytes_to_trans),
+                 "%d",xbmd_descriptors.bytes_to_trans);
    gtk_label_set_text(GTK_LABEL(app->write_bytes_to_transfer), xbmd_descriptors.wr_bytes_to_trans);
 }
 
@@ -620,7 +626,8 @@ void on_rd_num_tlps_spinner_value_changed(GtkSpinButton *rd_tlps, xbmd_app *app)
    xbmd_descriptors.bytes_to_trans = xbmd_descriptors.rd_tlp_size*xbmd_descriptors.num_rd_tlps*4;
 
    //Convert bytes_to_trans int to char* and update GUI
-   sprintf(xbmd_descriptors.rd_bytes_to_trans,"%d",xbmd_descriptors.bytes_to_trans);
+        snprintf(xbmd_descriptors.rd_bytes_to_trans, sizeof(xbmd_descriptors.rd_bytes_to_trans),
+                 "%d",xbmd_descriptors.bytes_to_trans);
    gtk_label_set_text(GTK_LABEL(app->read_bytes_to_transfer), xbmd_descriptors.rd_bytes_to_trans);
 }
 

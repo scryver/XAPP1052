@@ -56,19 +56,14 @@
 
 //member functions
 bmd_t::bmd_t(void){
-  this->rd_mbps_c = new char[1];   // Char string showing performance that is passed to GUI RD MBPS field
-  this->wr_mbps_c = new char[1];   // Char string showing performance that is passed to GUI WR MBPS field
   this->wr_result_text = " ";      // Contains text stating success of WR DMA or error condition if one exists
   this->rd_result_text = " ";      // Contains text stating success of RD DMA or error condition if one exists
   this->bmd_fatal_text = " ";      // Contains text stating error condition if BMD fails during setup of transfer
   this->wr_success = false;        // Bool declaring if Write DMA was successful
   this->rd_success = false;        // Bool declaring if Read DMA was successful
-
 }
 
 bmd_t::~bmd_t(void){
-  delete rd_mbps_c;                // Delete rd_mbps_c char* in destructor
-  delete wr_mbps_c;                // Delete wr_mbps_c char* in destructor
 }
 
 //--- WriteData(): Writes data to kernel buffer
@@ -830,8 +825,8 @@ int bmd_t::run_xbmd(xbmd_descriptors_t xbmd_descriptors, int ii) {
 //---                          register to start the transfer
 //---                       2) Returns the resulting average performance after converting it to char*.  We convert to
 //---                          char* because the argument to update the GUI text box takes a char*
-char* bmd_t::get_rd_mbps(int iter_count){
-  sprintf(this->rd_mbps_c,"%d",(rd_mbps/iter_count));
+const char* bmd_t::get_rd_mbps(int iter_count){
+    snprintf(this->rd_mbps_c, sizeof(this->rd_mbps_c), "%d",(rd_mbps/iter_count));
   return this->rd_mbps_c;
 }
 
@@ -844,8 +839,8 @@ char* bmd_t::get_rd_mbps(int iter_count){
 //---                          register to start the transfer
 //---                       2) Returns the resulting average performance after converting it to char*.  We convert to
 //---                          char* because the argument to update the GUI text box takes a char*
-char* bmd_t::get_wr_mbps(int iter_count){
-  sprintf(this->wr_mbps_c,"%d",(wr_mbps/iter_count));
+const char* bmd_t::get_wr_mbps(int iter_count){
+    snprintf(this->wr_mbps_c, sizeof(this->wr_mbps_c),"%d",(wr_mbps/iter_count));
   return this->wr_mbps_c;
 }
 

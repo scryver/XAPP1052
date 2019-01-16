@@ -1,10 +1,10 @@
 make
 
 rm -rf /dev/xbmd
-mknod /dev/xbmd c 241 1
+mknod /dev/xbmd c 241 0
 chown root /dev/xbmd
-chmod 0644 /dev/xbmd
-ls -al /dev/xbmd
+chgrp plugdev /dev/xbmd
+chmod 0664 /dev/xbmd
 
-./kernel/load_driver
+cd kernel && ./load_driver
 

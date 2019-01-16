@@ -66,8 +66,8 @@ public:
   const char* bmd_fatal_text;      // Contains text stating error condition if BMD fails during setup of transfer
   bool wr_success;                 // Bool declaring if Write DMA was successful
   bool rd_success;                 // Bool declaring if Read DMA was successful 
-  char* wr_mbps_c;                 // Char string showing performance that is passed to GUI WR MBPS field
-  char* rd_mbps_c;                 // Char string showing performance that is passed to GUI RD MBPS field
+    char wr_mbps_c[32];                 // Char string showing performance that is passed to GUI WR MBPS field
+    char rd_mbps_c[32];                 // Char string showing performance that is passed to GUI RD MBPS field
 
 
   // Constructor and destructor prototypes
@@ -80,8 +80,8 @@ public:
 
   // Gets Read and Write performance values and returns a char string containing the average performance for 
   // and entire DMA run (multiple iterations)
-  char* get_rd_mbps(int iter_count);
-  char* get_wr_mbps(int iter_count);
+  const char* get_rd_mbps(int iter_count);
+    const char* get_wr_mbps(int iter_count);
 
   // Returns a boolean for write and/or read stating whether a DMA transfer was successful or not.  Used to identify 
   // if a failure has occurred in a single DMA transfer during a run.
