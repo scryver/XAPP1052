@@ -134,9 +134,9 @@ struct xbmd_descriptors_t{
         wr_mbps = "";
 
     // DMA additional option variables
-    phantom_enable = true;
+    phantom_enable = false;
     aut_change_enable = false;
-    trans_streaming = true;
+    trans_streaming = false;
     random_enable = 0;
 
     // CFG Space Capabilities offsets
