@@ -165,7 +165,7 @@ int XPCIe_Open(struct inode *inode, struct file *filp)
     filp->private_data = dev;
     
     if (!dev) {
-        printk(KERN_WARNING"XBMD: Open: No device associated with this file.");
+        printk(KERN_WARNING"XBMD: Open: No device associated with this file.\n");
         return -EBUSY;
     }
     

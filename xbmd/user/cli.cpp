@@ -29,7 +29,7 @@ struct Config
 };
 
 internal void
-fatal(char *message, ...)
+fatal_error(char *message, ...)
 {
     va_list args;
     fprintf(stderr, "FATAL: ");
@@ -37,6 +37,7 @@ fatal(char *message, ...)
     vfprintf(stderr, message, args);
     va_end(args);
     fprintf(stderr, ".\n");
+    
     exit(1);
 }
 
@@ -49,7 +50,6 @@ output(char *message, ...)
     vfprintf(stdout, message, args);
     va_end(args);
     fprintf(stdout, ".\n");
-    exit(1);
 }
 
 internal int
@@ -72,7 +72,7 @@ get_capabilities(Config *config, int fd)
     s32 capId = 0;
     
     if (ioctl(fd, XBMD_IOC_RD_CFG_REG, &nextCapOffset) < 0) {
-        fatal("IOCTL failed reading a config reg");
+        fatal_error("IOCTL failed reading a config reg");
     } else {
         nextCapOffset = nextCapOffset & 0xFF;
     }
@@ -80,7 +80,7 @@ get_capabilities(Config *config, int fd)
       do {
         currCapOffset = nextCapOffset;
         if (ioctl(fd, XBMD_IOC_RD_CFG_REG, &nextCapOffset) < 0) {
-            fatal("IOCTL failed reading a config reg");
+            fatal_error("IOCTL failed reading a config reg");
         } else {
             capId = nextCapOffset & 0xFF;
             nextCapOffset = (nextCapOffset & 0xFF00) >> 8;
@@ -107,7 +107,7 @@ get_capabilities(Config *config, int fd)
             } break;
             
             default: {
-                fatal("Read Capability is not valid");
+                fatal_error("Read Capability is not valid");
             } break;
         }
     } while (nextCapOffset != 0);
@@ -120,28 +120,28 @@ update_config(Config *config, int fd)
     
     regValue = config->pmOffset;
     if (ioctl(fd, XBMD_IOC_RD_CFG_REG, &regValue) < 0) {
-        fatal("IOCTL failed reading power management capabilities");
+        fatal_error("IOCTL failed reading power management capabilities");
     } else {
         config->pmCapabilities = regValue >> 16;
     }
     
     regValue = config->pmOffset + 4;
     if (ioctl(fd, XBMD_IOC_RD_CFG_REG, &regValue) < 0) {
-        fatal("IOCTL failed reading PM status/control");
+        fatal_error("IOCTL failed reading PM status/control");
     } else {
         config->pmStatControl = regValue & 0xFFFF;
     }
     
     regValue = config->msiOffset;
     if (ioctl(fd, XBMD_IOC_RD_CFG_REG, &regValue) < 0) {
-        fatal("IOCTL failed reading MSI Control");
+        fatal_error("IOCTL failed reading MSI Control");
     } else {
         config->msiControl = regValue >> 16;
     }
     
     regValue = config->linkCapOffset;
     if (ioctl(fd, XBMD_IOC_RD_CFG_REG, &regValue) < 0) {
-        fatal("IOCTL failed reading Link Cap offset");
+        fatal_error("IOCTL failed reading Link Cap offset");
     } else {
         config->linkWidthCap = (regValue >> 4) & 0x3F;
         config->linkSpeedCap = regValue & 0xF;
@@ -149,7 +149,7 @@ update_config(Config *config, int fd)
     
     regValue = config->linkStatContOffset;
     if (ioctl(fd, XBMD_IOC_RD_CFG_REG, &regValue) < 0) {
-        fatal("IOCTL failed reading Link control");
+        fatal_error("IOCTL failed reading Link control");
     } else {
         config->linkControl = regValue & 16;
         config->linkSpeed = (regValue >> 16) & 0xF;
@@ -161,7 +161,7 @@ int main(int argc, char **argv)
 {
     int fd = open("/dev/xbmd", O_RDWR);
     if (fd <= 0) {
-        fatal("Could not open file /dev/xbmd");
+        fatal_error("Could not open file /dev/xbmd");
     }
     
     Config config;
@@ -172,21 +172,22 @@ int main(int argc, char **argv)
     u32 *readBuffer  = allocate_array(u32, 1024);
     
     for (u32 i = 0; i < 1024; ++i) {
-        writeBuffer[i] = (i + 1) * 3;
+        writeBuffer[i] = (i + 1) * 7;
     }
     
     for (u32 i = 0; i < 1024; ++i) {
         readBuffer[i] = 0xDEADBEAD;
     }
     
-    u32 regValue = 0;
+    u32 regValue = config.deviceStatContOffset;
     u32 maxPayloadSize = 32;
-    u32 tlpSizeMax = 0;
+    u32 tlpSizeMax = 0; 
     
     if (ioctl(fd, XBMD_IOC_RD_CFG_REG, &regValue) < 0) {
-        fatal("IOCTL failed reading 0x%03X", XBMD_IOC_RD_CFG_REG);
+        fatal_error("IOCTL failed reading 0x%03X", XBMD_IOC_RD_CFG_REG);
     } else {
         maxPayloadSize = (regValue & 0x000000E0) >> 5;
+        output("Max payload size: %d", maxPayloadSize);
     }
     
     switch (maxPayloadSize) {
@@ -202,10 +203,10 @@ int main(int argc, char **argv)
         case 4: { tlpSizeMax = 9; maxPayloadSize = 2048; } break;
         // NOTE(michiel): 4096 maxPayloadSize;
         case 5: { tlpSizeMax = 10; maxPayloadSize = 4096; } break;
-        default: { fatal("Max payload size is invalid"); } break;
+        default: { fatal_error("Max payload size is invalid"); } break;
     }
     
-    output("Max payload: %d, tlp max size: %d\n", maxPayloadSize, tlpSizeMax);
+    output("Max payload: %d, tlp max size: %d", maxPayloadSize, tlpSizeMax);
     
     u32 writeTLPSize = 32;
     u32 writeTLPCount = 32;
@@ -214,57 +215,58 @@ int main(int argc, char **argv)
     
     // NOTE(michiel): Copy data to kernel
     write_data(fd, 1024 * sizeof(*writeBuffer), writeBuffer);
+    output("Data copied to kernel");
     
     // NOTE(michiel): Setup DMA
     if (ioctl(fd, XBMD_IOC_RESET, 0) < 0) {
-        fatal("IOCTL failed setting reset");
+        fatal_error("IOCTL failed setting reset");
     } else {
         output("DMA Reset");
     }
     
     u32 dmaControlReg = 0;
     if (ioctl(fd, XBMD_IOC_READ_DMA_CTRL, &dmaControlReg) < 0) {
-        fatal("IOCTL failed reading DMA Control");
+        fatal_error("IOCTL failed reading DMA Control");
     } else {
         output("DMA Control: 0x%08X", dmaControlReg);
     }
     
     if (ioctl(fd, XBMD_IOC_WRITE_WR_COUNT, writeTLPCount) < 0) {
-        fatal("IOCTL failed setting the write TLP count");
+        fatal_error("IOCTL failed setting the write TLP count");
     }
     
     if (ioctl(fd, XBMD_IOC_WRITE_WR_LEN, writeTLPSize) < 0) {
-        fatal("IOCTL failed setting the write TLP size");
+        fatal_error("IOCTL failed setting the write TLP size");
     }
     
     if (ioctl(fd, XBMD_IOC_WRITE_RD_COUNT, readTLPCount) < 0) {
-        fatal("IOCTL failed setting the read TLP count");
+        fatal_error("IOCTL failed setting the read TLP count");
     }
     
     if (ioctl(fd, XBMD_IOC_WRITE_RD_LEN, readTLPSize) < 0) {
-        fatal("IOCTL failed setting the read TLP size");
+        fatal_error("IOCTL failed setting the read TLP size");
     }
     
     if (ioctl(fd, XBMD_IOC_READ_WR_COUNT, &regValue) < 0) {
-        fatal("IOCTL failed reading the write TLP count");
+        fatal_error("IOCTL failed reading the write TLP count");
     } else {
         output("Write TLP count: %u, expected %u", regValue, writeTLPCount);
     }
     
     if (ioctl(fd, XBMD_IOC_READ_WR_LEN, &regValue) < 0) {
-        fatal("IOCTL failed reading the write TLP size");
+        fatal_error("IOCTL failed reading the write TLP size");
     } else {
         output("Write TLP size: %u, expected %u", regValue, writeTLPSize);
     }
     
     if (ioctl(fd, XBMD_IOC_READ_RD_COUNT, &regValue) < 0) {
-        fatal("IOCTL failed reading the read TLP count");
+        fatal_error("IOCTL failed reading the read TLP count");
     } else {
         output("Read TLP count: %u, expected %u", regValue, readTLPCount);
     }
     
     if (ioctl(fd, XBMD_IOC_READ_RD_LEN, &regValue) < 0) {
-        fatal("IOCTL failed reading the read TLP size");
+        fatal_error("IOCTL failed reading the read TLP size");
     } else {
         output("Read TLP size: %u, expected %u", regValue, readTLPSize);
     }
@@ -275,23 +277,23 @@ int main(int argc, char **argv)
     u32 miscControl = (writeWRRCount << 24) | (readWRRCount << 16);
     
     if (ioctl(fd, XBMD_IOC_WRITE_MISC_CTL, miscControl) < 0) {
-        fatal("IOCTL failed setting misc control");
+        fatal_error("IOCTL failed setting misc control");
     }
     
     u32 readEnable = 1;
-    u32 writeEnable = 1;
+    u32 writeEnable = 0;
     dmaControlReg |= (readEnable << 16) | writeEnable;
     if (ioctl(fd, XBMD_IOC_WRITE_DMA_CTRL, dmaControlReg) < 0) {
-        fatal("IOCTL failed setting DMA control");
+        fatal_error("IOCTL failed setting DMA control");
     }
     
-    usleep(30000);
+    usleep(3000000);
     
     u32 dmaControlWrite = 0;
     u32 dmaControlRead = 0;
     
     if (ioctl(fd, XBMD_IOC_READ_DMA_CTRL, &regValue) < 0) {
-        fatal("IOCTL failed reading DMA control");
+        fatal_error("IOCTL failed reading DMA control");
     } else {
         dmaControlReg = regValue;
         dmaControlWrite = dmaControlReg & 0x0000FFFF;
@@ -299,6 +301,7 @@ int main(int argc, char **argv)
     }
     
     read_data(fd, writeTLPSize * writeTLPCount * sizeof(u32), readBuffer);
+    output("Data copied from kernel");
     
     // NOTE(michiel): Read error check
     if (readEnable) {
@@ -334,10 +337,10 @@ int main(int argc, char **argv)
     
     regValue = config.deviceStatContOffset;
     if (ioctl(fd, XBMD_IOC_RD_CFG_REG, &regValue) < 0) {
-        fatal("Device status read failed");
+        fatal_error("Device status read failed");
     } else {
         if ((regValue & 0x00040000) == 0x00040000) {
-            fatal("Fatal reported by device");
+            fatal_error("Fatal reported by device");
         }
         if ((regValue & 0x00020000) == 0x00020000) {
             output("Non fatal reported by device");
@@ -363,7 +366,7 @@ int main(int argc, char **argv)
                 case 2: { linkWidthMultiplier = 62; } break;
                 case 3: { linkWidthMultiplier = 125; } break;
                 case 4: { linkWidthMultiplier = 250; } break;
-                default: { fatal("%s: Link width is not valid", gen); } break;
+                default: { fatal_error("%s: Link width is not valid", gen); } break;
         }
         } break;
         
@@ -375,18 +378,18 @@ int main(int argc, char **argv)
                 case 2: { linkWidthMultiplier = 125; } break;
                 case 3: { linkWidthMultiplier = 250; } break;
                 case 4: { linkWidthMultiplier = 500; } break;
-                default: { fatal("%s: Link width is not valid", gen); } break;
+                default: { fatal_error("%s: Link width is not valid", gen); } break;
             }
         } break;
         
         default: {
-            fatal("Link speed is not valid");
+            fatal_error("Link speed is not valid");
         } break;
     }
     
     if (writeEnable) {
         if (ioctl(fd, XBMD_IOC_READ_WR_PERF, &trnClks) < 0) {
-            fatal("IOCTL failed reading write performance");
+            fatal_error("IOCTL failed reading write performance");
         }
         
         tempWrMbps = (writeTLPSize * 4 * writeTLPCount * linkWidthMultiplier) / trnClks;
@@ -395,7 +398,7 @@ int main(int argc, char **argv)
     
     if (readEnable) {
         if (ioctl(fd, XBMD_IOC_READ_RD_PERF, &trnClks) < 0) {
-            fatal("IOCTL failed reading read performance");
+            fatal_error("IOCTL failed reading read performance");
         }
         
         tempRdMbps = (readTLPSize * 4 * readTLPCount * linkWidthMultiplier) / trnClks;
