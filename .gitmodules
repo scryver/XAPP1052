@@ -1,0 +1,3 @@
+[submodule "xbmd/libberdip"]
+	path = xbmd/libberdip
+	url = git@github.com:scryver/libberdip
