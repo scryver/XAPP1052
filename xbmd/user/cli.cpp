@@ -164,6 +164,11 @@ int main(int argc, char **argv)
         fatal_error("Could not open file /dev/xbmd");
     }
     
+    b32 doRead = false;
+    if (argc > 1) {
+        doRead = true;
+    }
+    
     Config config;
     get_capabilities(&config, fd);
     update_config(&config, fd);
@@ -208,10 +213,10 @@ int main(int argc, char **argv)
     
     output("Max payload: %d, tlp max size: %d", maxPayloadSize, tlpSizeMax);
     
-    u32 writeTLPSize = 32;
-    u32 writeTLPCount = 32;
-    u32 readTLPSize = 32;
-    u32 readTLPCount = 32;
+    u32 writeTLPSize = 256;
+    u32 writeTLPCount = 4;
+    u32 readTLPSize = 256;
+    u32 readTLPCount = 4;
     
     // NOTE(michiel): Copy data to kernel
     write_data(fd, 1024 * sizeof(*writeBuffer), writeBuffer);
@@ -280,8 +285,8 @@ int main(int argc, char **argv)
         fatal_error("IOCTL failed setting misc control");
     }
     
-    u32 readEnable = 1;
-    u32 writeEnable = 0;
+    u32 readEnable = doRead ? 0 : 1;
+    u32 writeEnable = doRead ? 1 : 0;
     dmaControlReg |= (readEnable << 16) | writeEnable;
     if (ioctl(fd, XBMD_IOC_WRITE_DMA_CTRL, dmaControlReg) < 0) {
         fatal_error("IOCTL failed setting DMA control");
