@@ -58,13 +58,11 @@ int main(int argc, char **argv)
     output("Data copied from kernel");
     
     // NOTE(michiel): Write error check
-        b32 writeError = false;
         for (u32 i = 0; i < 1024; ++i) {
             u32 readData = readBuffer[i];
             u32 writeData = writeBuffer[i];
             if (readData != writeData) {
                 output("Mismatch: wrote %d, got %d", writeData, readData);
-                writeError = true;
             }
     }
     

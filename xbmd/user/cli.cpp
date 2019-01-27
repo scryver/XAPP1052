@@ -291,9 +291,19 @@ int main(int argc, char **argv)
     if (ioctl(fd, XBMD_IOC_WRITE_DMA_CTRL, dmaControlReg) < 0) {
         fatal_error("IOCTL failed setting DMA control");
     }
-    
-    usleep(3000000);
-    
+
+#if 0
+    usleep(1000000);
+    #else
+    do {
+    usleep(1000);
+        if (ioctl(fd, XBMD_IOC_READ_DMA_CTRL, &dmaControlReg) < 0) {
+            fatal_error("IOCTL failed reading DMA control");
+        }
+    } while ((readEnable && (dmaControlReg & 0x01010000)) ||
+             (writeEnable && (dmaControlReg & 0x00000101)));
+    #endif
+
     u32 dmaControlWrite = 0;
     u32 dmaControlRead = 0;
     

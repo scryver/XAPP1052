@@ -56,7 +56,7 @@ static void xpcie_write_reg(xbmd_device *dev, u32 dwOffset, u32 val)
 {
     writel(val, dev->baseVirtual + (4 * dwOffset));
 }
-
+`
 static u32 xpcie_read_reg(xbmd_device *dev, u32 dwOffset)
 {
     u32 result = readl(dev->baseVirtual + (4 * dwOffset));
@@ -260,9 +260,10 @@ static ssize_t xpcie_read(struct file *filep, char __user *buf, size_t count, lo
     //dmaControlReg = xpcie_read_reg(dev, Reg_DeviceDMACS);
     xpcie_write_reg(dev, Reg_WriteTlpSize, tlpSize);
     xpcie_write_reg(dev, Reg_WriteTlpCount, tlpCount);
+    //xpcie_write_reg(dev, Reg_WriteTotalCount, tlpSize * tlpCount);
     xpcie_write_reg(dev, Reg_DeviceMiscControl, 0);
     
-    dmaControlReg |= 1; // NOTE(michiel): Enable write to memory
+    dmaControlReg |= 1 << 0; // NOTE(michiel): Enable write to memory
     dmaControlReg &= ~(1 << 7); // NOTE(michiel): Make sure interrupt is enabled
     xpcie_write_reg(dev, Reg_DeviceDMACS, dmaControlReg);
     
@@ -277,8 +278,12 @@ static ssize_t xpcie_read(struct file *filep, char __user *buf, size_t count, lo
         if (down_interruptible(&dev->dmaSem)) {
             dev->dmaD2HStart = 0;
             return -ERESTARTSYS;
-        }
-    }
+}
+        #if 0
+        dmaControlReg = xpcie_read_reg(dev, Reg_DeviceDMACS);
+        dev->dmaD2HDone = (dmaControlReg & 0x01000000) ? 1 : 0;
+    #endif
+}
     
     dev->dmaD2HStart = 0;
     dev->dmaD2HDone = 0;
